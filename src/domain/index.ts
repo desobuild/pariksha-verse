@@ -6,3 +6,4 @@
 export * from "./exam";
 export * from "./exam-catalog";
 export * from "./preparation";
+export * from "./dashboard";

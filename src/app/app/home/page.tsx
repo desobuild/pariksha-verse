@@ -1,54 +1,34 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  CalendarCheck,
-  ChevronRight,
-  Clock,
-  Search,
-  BookOpen,
-  Sparkles,
-  History,
-  Loader2,
-  Target,
-} from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { PageContainer } from "@/components/navigation/page-container";
-import { SectionHeader } from "@/components/shared/section-header";
-import { IconTile } from "@/components/shared/icon-tile";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/repositories/repository-provider";
 import { useActiveWorkspace } from "@/hooks/use-active-workspace";
 import { useAuth } from "@/lib/auth/use-auth";
-import { getExamAttempt, getExamForAttempt } from "@/domain/exam-catalog";
-import { resolveActiveExamAttempt } from "@/domain/exam";
-import { formatStudyGoal, getPreparationStageLabel } from "@/domain/preparation";
-import type { UserPreferences } from "@/db/schema";
+import { loadDashboardData, type DashboardSnapshot } from "@/domain/dashboard";
+import {
+  DashboardHeader,
+  TodaysFocusCard,
+  TodaysStudyPlan,
+  ProgressSnapshot,
+  AttentionNeeded,
+  RecentActivity,
+  QuickActions,
+} from "@/components/dashboard";
+import type { PlannerTask } from "@/db/schema";
 
 export default function HomePage() {
   const router = useRouter();
   const { workspace, status, refresh } = useActiveWorkspace();
   const repos = useRepositories();
   const { isMigrating } = useAuth();
-  const [preferences, setPreferences] = React.useState<UserPreferences | null>(null);
 
-  React.useEffect(() => {
-    if (status !== "ready" || !workspace) return;
-    let cancelled = false;
-    repos.preferences
-      .getUserPreferences()
-      .then((prefs) => {
-        if (!cancelled) setPreferences(prefs);
-      })
-      .catch(() => {
-        /* preferences are optional for the shell */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [status, workspace, repos]);
+  const [snapshot, setSnapshot] = React.useState<DashboardSnapshot | null>(null);
+  const [loadingData, setLoadingData] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   // Guest → account migration may bring the workspace in asynchronously:
   // re-resolve once it settles instead of bouncing the user to onboarding.
@@ -67,150 +47,115 @@ export default function HomePage() {
     }
   }, [status, workspace, isMigrating, router]);
 
-  if (status === "loading" || !workspace) {
+  // Fetch dashboard domain data whenever workspace or repos change
+  const fetchData = React.useCallback(async () => {
+    if (!workspace) return;
+    setLoadingData(true);
+    setError(null);
+    try {
+      const data = await loadDashboardData(repos, workspace);
+      setSnapshot(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+    } finally {
+      setLoadingData(false);
+    }
+  }, [repos, workspace]);
+
+  React.useEffect(() => {
+    if (status === "ready" && workspace) {
+      void fetchData();
+    }
+  }, [status, workspace, fetchData]);
+
+  // Handle task status toggling
+  const handleToggleTask = async (taskId: string, currentStatus: PlannerTask["status"]) => {
+    const nextStatus = currentStatus === "completed" ? "upcoming" : "completed";
+
+    // Optimistic UI update
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        todaysTasks: prev.todaysTasks.map((t) =>
+          t.id === taskId ? { ...t, status: nextStatus } : t
+        ),
+      };
+    });
+
+    try {
+      await repos.planner.updateTaskStatus(taskId, nextStatus);
+    } catch {
+      // Revert on error
+      void fetchData();
+    }
+  };
+
+  if (status === "loading" || !workspace || loadingData) {
     return (
       <PageContainer>
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" aria-label="Loading your preparation space" />
-          <p className="text-sm">Resolving your preparation space…</p>
+          <Loader2 className="h-6 w-6 animate-spin text-primary" aria-label="Loading your preparation space" />
+          <p className="text-sm font-medium">Resolving your preparation space…</p>
         </div>
       </PageContainer>
     );
   }
 
-  const attempt = getExamAttempt(workspace.examAttemptId) ?? resolveActiveExamAttempt();
-  const exam = getExamForAttempt(workspace.examAttemptId);
-  const examDate = attempt.examDate
-    ? attempt.examDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-    : "Date to be announced";
-  const daysLeft = attempt.examDate
-    ? Math.max(
-        0,
-        Math.ceil((attempt.examDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-      )
-    : null;
-  const goalLabel = formatStudyGoal(preferences?.dailyStudyGoalMinutes);
-  const stageLabel = getPreparationStageLabel(preferences?.preparationStage);
+  if (error && !snapshot) {
+    return (
+      <PageContainer>
+        <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <AlertCircle className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">Could not load dashboard</p>
+          <p className="text-xs text-foreground-subtle max-w-sm">{error}</p>
+          <Button size="sm" onClick={() => void fetchData()} className="mt-2 gap-1.5">
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </Button>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  if (!snapshot) return null;
 
   return (
-    <PageContainer>
-      {/* Greeting */}
-      <div className="mb-5">
-        <h1 className="type-h1">Welcome back</h1>
-        <p className="mt-1 type-body text-muted-foreground">Ready to make today count?</p>
-      </div>
+    <PageContainer className="py-6 sm:py-8 max-w-7xl">
+      {/* Header: Exam Countdown & Preparation Profile */}
+      <DashboardHeader examData={snapshot.exam} />
 
-      {/* Search affordance — activates with the Study module */}
-      <div
-        className="mb-6 flex h-12 w-full items-center gap-3 rounded-full bg-surface-tint px-4 text-sm text-foreground-subtle"
-        aria-hidden="true"
-      >
-        <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">Search topics, chapters &amp; resources</span>
-      </div>
+      {/* Main Responsive Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Left Column (Dominant: Focus & Daily Actions) */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+          {/* Today's Focus: Primary Section */}
+          <TodaysFocusCard focus={snapshot.todaysFocus} />
 
-      {/* Active preparation summary */}
-      <Card className="mb-4 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <IconTile variant="strong" size="lg">
-              <CalendarCheck className="h-6 w-6" />
-            </IconTile>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-foreground">{attempt.label}</p>
-                {attempt.isProvisional && <Badge variant="primary">Provisional syllabus</Badge>}
-              </div>
-              <p className="mt-1 flex items-center gap-1.5 text-xs text-foreground-subtle">
-                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                Exam on {examDate}
-                {daysLeft !== null && ` · ${daysLeft} days to go`}
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/exam/select"
-            className="shrink-0 self-center rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Change target exam"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Link>
+          {/* Today's Study Plan */}
+          <TodaysStudyPlan
+            tasks={snapshot.todaysTasks}
+            examAttemptId={workspace.examAttemptId}
+            onToggleComplete={handleToggleTask}
+          />
+
+          {/* Attention Needed */}
+          <AttentionNeeded items={snapshot.attentionItems} />
         </div>
-      </Card>
 
-      {/* Preparation profile */}
-      <Card className="mb-8 p-5" variant="muted">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex items-center gap-3">
-            <IconTile variant="tint" size="sm">
-              <Clock className="h-4 w-4" />
-            </IconTile>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold leading-tight text-foreground">{goalLabel}</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-foreground-subtle">Daily goal</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <IconTile variant="tint" size="sm">
-              <Target className="h-4 w-4" />
-            </IconTile>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold leading-tight text-foreground">{stageLabel}</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-foreground-subtle">Current stage</p>
-            </div>
-          </div>
+        {/* Right Column (Overview, Analytics & Recent Activity) */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+          {/* Progress Snapshot */}
+          <ProgressSnapshot progress={snapshot.progress} />
+
+          {/* Quick Actions */}
+          <QuickActions />
+
+          {/* Recent Activity */}
+          <RecentActivity activities={snapshot.recentActivity} />
         </div>
-      </Card>
-
-      {/* Continue studying */}
-      <SectionHeader title="Continue Studying" />
-      <Card className="mb-8 p-5" variant="base">
-        <div className="flex items-center gap-3.5">
-          <IconTile variant="tint" size="lg">
-            <BookOpen className="h-6 w-6" />
-          </IconTile>
-          <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-foreground">Pick up your syllabus</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-foreground-subtle">
-              {exam
-                ? `Your ${exam.shortName} chapter progress and study sessions will appear here when the Study module ships.`
-                : "Your chapter progress and study sessions will appear here when the Study module ships."}
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Today's focus */}
-      <SectionHeader title="Today's Focus" />
-      <div className="space-y-3">
-        <Card className="p-4">
-          <div className="flex items-center gap-3.5">
-            <IconTile variant="tint" size="md">
-              <Sparkles className="h-5 w-5" />
-            </IconTile>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Daily plan</p>
-              <p className="mt-0.5 text-xs text-foreground-subtle">
-                Scheduled tasks for today will appear here.
-              </p>
-            </div>
-            <Badge variant="neutral">Planner</Badge>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3.5">
-            <IconTile variant="tint" size="md">
-              <History className="h-5 w-5" />
-            </IconTile>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Revision queue</p>
-              <p className="mt-0.5 text-xs text-foreground-subtle">
-                Spaced-repetition items due today will appear here.
-              </p>
-            </div>
-            <Badge variant="neutral">Revision</Badge>
-          </div>
-        </Card>
       </div>
     </PageContainer>
   );
