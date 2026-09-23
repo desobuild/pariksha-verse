@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 255 100% 99%;
+    --foreground: 222 41% 13%;
+
+    --surface: 0 0% 100%;
+    --surface-foreground: 222 41% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 41% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 41% 13%;
+
+    --primary: 217 100% 42%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 217 100% 35%;
+
+    --secondary: 210 29% 95%;
+    --secondary-foreground: 215 25% 20%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 212 100% 97%;
+    --accent-foreground: 217 100% 42%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 100% 42%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 35% 7%;
+    --foreground: 210 40% 98%;
+
+    --surface: 222 39% 11%;
+    --surface-foreground: 210 40% 98%;
+
+    --card: 222 39% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 39% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 217 91% 52%;
+
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 215 28% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 224 76% 21%;
+    --accent-foreground: 213 97% 87%;
+
+    --destructive: 0 74% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 39% 11%;
+
+    --border: 217 19% 20%;
+    --input: 217 19% 20%;
+    --ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased min-h-screen selection:bg-primary/15 selection:text-primary;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Accessible focus indicators */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Safe area padding for mobile notches / bottom nav */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
