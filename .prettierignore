@@ -1,0 +1,12 @@
+# dependencies & build
+node_modules
+.next
+.vinext
+dist
+pnpm-lock.yaml
+
+# migrations & meta
+src/db/migrations
+.wrangler
+coverage
+test-results
