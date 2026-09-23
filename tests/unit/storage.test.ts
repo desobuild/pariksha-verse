@@ -13,9 +13,9 @@ describe("Storage Adapter Abstraction", () => {
     it("sets, gets, removes, and clears items accurately", async () => {
       expect(await storage.getItem("test-key")).toBeNull();
 
-      await storage.setItem("test-key", { exam: "NEET", year: 2026 });
+      await storage.setItem("test-key", { exam: "NEET", year: 2027 });
       const value = await storage.getItem<{ exam: string; year: number }>("test-key");
-      expect(value).toEqual({ exam: "NEET", year: 2026 });
+      expect(value).toEqual({ exam: "NEET", year: 2027 });
 
       const keys = await storage.getAllKeys();
       expect(keys).toContain("test-key");

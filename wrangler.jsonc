@@ -2,20 +2,19 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pariksha-verse",
   "compatibility_date": "2025-02-14",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "pariksha-verse-db",
-      "database_id": "pariksha-verse-db-local"
-    }
+      "database_id": "pariksha-verse-db-local",
+      "migrations_dir": "src/db/migrations"
+    },
   ],
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "development",
   },
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }

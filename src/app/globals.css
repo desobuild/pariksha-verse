@@ -4,85 +4,132 @@
 
 @layer base {
   :root {
-    --background: 255 100% 99%;
-    --foreground: 222 41% 13%;
+    /*
+     * Approved Stitch palette (Phase 4.5).
+     * Source of truth: design/screens/*.svg — Material-3-style periwinkle family.
+     * Page canvas: #FAF8FF. Primary: #0051D5. Headline ink: #131B2E.
+     */
+    --background: 257 100% 99%;
+    /* High-contrast readable foreground text (#131B2E) */
+    --foreground: 222 42% 13%;
 
+    /* Calm clean white card surfaces */
     --surface: 0 0% 100%;
-    --surface-foreground: 222 41% 13%;
+    --surface-elevated: 0 0% 100%;
+    --surface-muted: 235 100% 97%;
+    --surface-foreground: 222 42% 13%;
+    /* Stitch tint surfaces: icon tiles, chips, nested containers */
+    --surface-tint: 231 100% 96%;
+    --surface-tint-strong: 230 100% 94%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 41% 13%;
+    --card-foreground: 222 42% 13%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 41% 13%;
+    --popover-foreground: 222 42% 13%;
 
+    /* Stitch primary accent (#0051D5) */
     --primary: 217 100% 42%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 100% 35%;
+    --primary-hover: 218 100% 36%;
 
-    --secondary: 210 29% 95%;
-    --secondary-foreground: 215 25% 20%;
+    /* Tinted secondary actions and soft backgrounds (#EAEDFF / #00236F) */
+    --secondary: 231 100% 96%;
+    --secondary-foreground: 221 100% 22%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    /* Muted elements; body-muted ink (#444651) */
+    --muted: 235 100% 97%;
+    --muted-foreground: 231 9% 29%;
+    /* Tertiary caption ink (#757682) from the Stitch designs */
+    --foreground-subtle: 235 5% 48%;
 
-    --accent: 212 100% 97%;
-    --accent-foreground: 217 100% 42%;
+    /* Subtle accents */
+    --accent: 231 100% 96%;
+    --accent-foreground: 221 100% 22%;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 142 71% 36%;
+    /* Semantic status tokens (teal success family from Stitch) */
+    --success: 174 100% 14%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 38 92% 42%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
+    --destructive: 0 75% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --info: 222 89% 47%;
+    --info-foreground: 0 0% 100%;
+
+    /* Soft lavender hairline borders (#DBE1FF family) */
+    --border: 230 100% 93%;
+    --border-subtle: 231 100% 96%;
+    --input: 230 100% 93%;
     --ring: 217 100% 42%;
 
+    /* Restrained radius: 12px base */
     --radius: 0.75rem;
   }
 
   .dark {
-    --background: 220 35% 7%;
-    --foreground: 210 40% 98%;
+    /*
+     * Dark counterpart derived from the Stitch periwinkle family
+     * (designs are light-only; relationships preserved: tinted navy
+     * surfaces, lightened primary for AA contrast on dark).
+     */
+    --background: 230 32% 8%;
+    /* Crisp readable foreground */
+    --foreground: 230 30% 96%;
 
-    --surface: 222 39% 11%;
-    --surface-foreground: 210 40% 98%;
+    /* Slightly lighter calm dark surfaces */
+    --surface: 230 27% 12%;
+    --surface-elevated: 230 23% 15%;
+    --surface-muted: 230 25% 14%;
+    --surface-foreground: 230 30% 96%;
+    --surface-tint: 227 36% 18%;
+    --surface-tint-strong: 226 34% 22%;
 
-    --card: 222 39% 11%;
-    --card-foreground: 210 40% 98%;
+    --card: 230 27% 12%;
+    --card-foreground: 230 30% 96%;
 
-    --popover: 222 39% 11%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 230 27% 12%;
+    --popover-foreground: 230 30% 96%;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 91% 52%;
+    /* Lightened primary with deep-navy on-color text (M3 dark pattern) */
+    --primary: 219 100% 76%;
+    --primary-foreground: 221 100% 14%;
+    --primary-hover: 219 100% 84%;
 
-    --secondary: 215 28% 17%;
-    --secondary-foreground: 210 40% 98%;
+    /* Dark secondary */
+    --secondary: 226 34% 22%;
+    --secondary-foreground: 228 100% 90%;
 
-    --muted: 215 28% 17%;
-    --muted-foreground: 215 20% 65%;
+    /* Dark muted */
+    --muted: 230 25% 15%;
+    --muted-foreground: 231 14% 72%;
+    --foreground-subtle: 233 9% 60%;
 
-    --accent: 224 76% 21%;
-    --accent-foreground: 213 97% 87%;
+    /* Subtle dark accents */
+    --accent: 227 36% 18%;
+    --accent-foreground: 219 100% 86%;
 
-    --destructive: 0 74% 42%;
-    --destructive-foreground: 0 0% 100%;
+    /* Semantic status tokens for dark mode */
+    --success: 173 58% 63%;
+    --success-foreground: 174 100% 8%;
 
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    --warning: 40 92% 60%;
+    --warning-foreground: 38 92% 12%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 222 39% 11%;
+    --destructive: 0 90% 72%;
+    --destructive-foreground: 0 75% 12%;
 
-    --border: 217 19% 20%;
-    --input: 217 19% 20%;
-    --ring: 217 91% 60%;
+    --info: 222 89% 70%;
+    --info-foreground: 221 100% 14%;
+
+    /* Subtle dark borders */
+    --border: 229 22% 21%;
+    --border-subtle: 229 20% 17%;
+    --input: 229 22% 21%;
+    --ring: 219 100% 76%;
   }
 }
 
@@ -101,6 +148,18 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
+  /* Respect prefers-reduced-motion across all transitions and animations */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* Safe area padding for mobile notches / bottom nav */
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -108,5 +167,45 @@
 
   .safe-area-top {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* Centralized Typography System */
+@layer components {
+  .type-display {
+    @apply text-3xl font-bold tracking-tight text-foreground sm:text-4xl leading-tight;
+  }
+  .type-h1 {
+    @apply text-2xl font-bold tracking-tight text-foreground sm:text-3xl leading-snug;
+  }
+  .type-h2 {
+    @apply text-xl font-semibold tracking-tight text-foreground sm:text-2xl leading-snug;
+  }
+  .type-h3 {
+    @apply text-lg font-semibold text-foreground sm:text-xl leading-normal;
+  }
+  .type-h4 {
+    @apply text-base font-semibold text-foreground leading-normal;
+  }
+  .type-body-large {
+    @apply text-base font-normal text-foreground leading-relaxed;
+  }
+  .type-body {
+    @apply text-sm font-normal text-foreground leading-relaxed;
+  }
+  .type-body-small {
+    @apply text-xs font-normal text-muted-foreground leading-normal;
+  }
+  .type-label {
+    @apply text-sm font-medium text-foreground leading-none;
+  }
+  .type-caption {
+    @apply text-xs text-muted-foreground leading-normal;
+  }
+  .type-button {
+    @apply text-sm font-medium leading-none;
+  }
+  .type-nav {
+    @apply text-xs sm:text-sm font-medium leading-tight;
   }
 }

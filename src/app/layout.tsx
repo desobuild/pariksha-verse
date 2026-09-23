@@ -1,7 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { BRAND } from "@/config/brand";
 import { ThemeProvider } from "@/components/shared/theme-provider";
+import { AuthProvider } from "@/lib/auth/auth-context";
+import { RepositoryProvider } from "@/repositories/repository-provider";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -23,7 +32,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#FAF8FF" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B0F17" },
+    { media: "(prefers-color-scheme: dark)", color: "#0D1220" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -38,11 +47,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-background text-foreground font-sans antialiased">
+      <body className={`${inter.variable} min-h-screen bg-background text-foreground font-sans antialiased`}>
         <ThemeProvider>
-          {children}
+          <AuthProvider>
+            <RepositoryProvider>{children}</RepositoryProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
   );
 }
+

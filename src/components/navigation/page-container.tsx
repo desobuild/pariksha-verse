@@ -21,7 +21,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-20 md:pb-8",
+        "mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8",
         sizeClasses[size],
         className
       )}

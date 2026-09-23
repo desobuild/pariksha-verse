@@ -26,6 +26,19 @@ export function getDb(d1Binding?: D1Database): DatabaseInstance {
     return cachedDb;
   }
 
+  // If running in local Node environment (e.g. next dev or Playwright), use local SQLite D1 adapter
+  if (typeof process !== "undefined" && process.versions?.node) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getLocalD1Database } = require("./local-d1");
+      const localD1 = getLocalD1Database();
+      cachedDb = drizzle(localD1, { schema });
+      return cachedDb;
+    } catch {
+      // Fall through to error
+    }
+  }
+
   throw new Error(
     "D1 database binding 'DB' is not configured or not accessible in the current environment."
   );

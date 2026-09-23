@@ -8,7 +8,7 @@ export default function TermsOfServicePage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-surface px-4 py-3 sm:px-6">
-        <Link href="/" className="font-bold text-foreground hover:text-primary transition-colors">
+        <Link href="/" className="font-semibold text-sm text-foreground hover:text-primary transition-colors">
           &larr; Back to {BRAND.name}
         </Link>
       </header>
@@ -23,10 +23,12 @@ export default function TermsOfServicePage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
             <p>
-              {BRAND.name} is an independent preparation companion built to assist students preparing for competitive examinations in India.
+              {BRAND.name} is an independent preparation companion built to assist students
+              preparing for competitive examinations in India.
             </p>
             <p>
-              All test syllabi, chapter outlines, and exam formats remain the intellectual property of their respective examining bodies (e.g. NTA, UPSC, etc.).
+              All test syllabi, chapter outlines, and exam formats remain the intellectual property
+              of their respective examining bodies (e.g. NTA, UPSC, etc.).
             </p>
           </CardContent>
         </Card>

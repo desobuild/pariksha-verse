@@ -1,17 +1,92 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/navigation/page-container";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormGroup, FormLabel, FormMessage } from "@/components/ui/form";
 import { BRAND } from "@/config/brand";
+import { useAuth } from "@/lib/auth/use-auth";
 
 export default function CreateAccountPage() {
+  const router = useRouter();
+  const { createAccount, verify, continueAsGuest } = useAuth();
+  const [email, setEmail] = useState("");
+  const [token, setToken] = useState("");
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setLoading(true);
+    setError(null);
+
+    const res = await createAccount(email);
+    setLoading(false);
+
+    if (res.success && res.token) {
+      // In dev/test: auto-verify immediately
+      setToken(res.token);
+      setSuccessMsg("Account created! Completing sign in...");
+      setLoading(true);
+      const vRes = await verify(email, res.token);
+      setLoading(false);
+      if (vRes.success) {
+        router.push("/app/home");
+      } else {
+        setStep("verify");
+        setError(vRes.error || "Verification failed");
+      }
+    } else if (res.success) {
+      setStep("verify");
+      setSuccessMsg("Verification link sent! Enter your code to continue.");
+    } else {
+      setError(res.error || "Failed to create account.");
+    }
+  };
+
+  const handleManualVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !token) return;
+    setLoading(true);
+    setError(null);
+
+    const res = await verify(email, token);
+    setLoading(false);
+
+    if (res.success) {
+      router.push("/app/home");
+    } else {
+      setError(res.error || "Invalid or expired token.");
+    }
+  };
+
+  const handleContinueAsGuest = async () => {
+    await continueAsGuest();
+    router.push("/app/home");
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center py-12">
       <PageContainer size="narrow">
         <div className="mb-6 text-center">
-          <Link href="/" className="inline-flex items-center gap-2 mb-2 font-bold text-xl text-foreground">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 mb-2 font-bold text-xl text-foreground"
+          >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-sm">
               {BRAND.logo.mark}
             </div>
@@ -23,27 +98,85 @@ export default function CreateAccountPage() {
         <Card>
           <CardHeader>
             <CardTitle>Create Account</CardTitle>
-            <CardDescription>Start your personalized competitive exam journey</CardDescription>
+            <CardDescription>
+              Sync your preparation progress across all your devices
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="name">Full Name</Label>
-              <Input id="name" type="text" placeholder="Aarav Sharma" disabled />
+            {error && (
+              <FormMessage error className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                {error}
+              </FormMessage>
+            )}
+            {successMsg && (
+              <div className="p-3 text-xs rounded-lg bg-primary/10 text-primary border border-primary/20 font-medium">
+                {successMsg}
+              </div>
+            )}
+
+            {step === "request" ? (
+              <form onSubmit={handleCreate} className="space-y-4">
+                <FormGroup>
+                  <FormLabel htmlFor="email" required>
+                    Email Address
+                  </FormLabel>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="student@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoFocus
+                    error={!!error}
+                  />
+                </FormGroup>
+                <Button type="submit" className="w-full" loading={loading}>
+                  Create Account with Email
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleManualVerify} className="space-y-4">
+                <FormGroup>
+                  <FormLabel htmlFor="token" required>
+                    Verification Code / Token
+                  </FormLabel>
+                  <Input
+                    id="token"
+                    type="text"
+                    placeholder="Paste verification token"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    required
+                    error={!!error}
+                  />
+                </FormGroup>
+                <Button type="submit" className="w-full" loading={loading}>
+                  Confirm & Sign In
+                </Button>
+              </form>
+            )}
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Or</span>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="student@example.com" disabled />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="••••••••" disabled />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Account registration will be enabled in subsequent phases.
-            </p>
-            <Button asChild className="w-full">
-              <Link href="/exam/select">Get Started as Guest</Link>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleContinueAsGuest}
+            >
+              Continue as Guest
             </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              Privacy First: We collect only your email to sync your workspace. Zero advertisements, zero passwords stored.
+            </p>
           </CardContent>
           <CardFooter className="justify-center border-t border-border pt-4 text-xs text-muted-foreground">
             <span>Already have an account? </span>

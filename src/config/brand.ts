@@ -6,6 +6,8 @@ export interface BrandConfig {
   logo: {
     text: string;
     mark: string;
+    /** Approved brand asset (design/screens/ParikshaVerse Icon.svg), mirrored at /icon.svg */
+    icon: string;
   };
   links: {
     terms: string;
@@ -24,20 +26,12 @@ export const BRAND: BrandConfig = {
   logo: {
     text: "ParikshaVerse",
     mark: "PV",
+    icon: "/icon.svg",
   },
   links: {
     terms: "/legal/terms",
     privacy: "/legal/privacy",
     support: "mailto:support@parikshaverse.in",
   },
-  supportedExamsInitial: [
-    "NEET",
-    "JEE",
-    "UPSC",
-    "SSC",
-    "GATE",
-    "CAT",
-    "CUET",
-    "Banking",
-  ],
+  supportedExamsInitial: ["NEET", "JEE", "UPSC", "SSC", "GATE", "CAT", "CUET", "Banking"],
 };
