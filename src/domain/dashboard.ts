@@ -82,6 +82,14 @@ export function calculateExamCountdown(
 // 2. TAXONOMY RESOLUTION
 // ============================================================================
 
+/**
+ * Phase 7 Study integration: topic-aware actions land directly on the
+ * topic detail page; generic actions fall back to the syllabus navigator.
+ */
+function topicStudyHref(topicId?: string): string {
+  return topicId ? `/app/study/${topicId}` : "/app/study";
+}
+
 export interface SubjectTaxonomyInfo {
   id: string;
   name: string;
@@ -271,7 +279,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: meta?.subjectName,
       reason: isOverdue ? "Revision is overdue." : "Revision is due today.",
       ctaLabel: "Start Revision",
-      ctaHref: "/app/study",
+      ctaHref: topicStudyHref(item.topicId),
       metadata: { topicId: item.topicId },
     };
   }
@@ -296,7 +304,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: meta?.subjectName,
       reason: isOverdue ? "Revision is overdue." : "Revision is due today.",
       ctaLabel: "Start Revision",
-      ctaHref: "/app/study",
+      ctaHref: topicStudyHref(p.topicId),
       metadata: { topicId: p.topicId },
     };
   }
@@ -321,7 +329,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: meta?.subjectName,
       reason: `Recent practice accuracy is ${accuracyPct}% (target: 60%+).`,
       ctaLabel: "Practice Topic",
-      ctaHref: "/app/study",
+      ctaHref: topicStudyHref(weak.topicId),
       metadata: { topicId: weak.topicId, accuracyPercent: accuracyPct },
     };
   }
@@ -350,7 +358,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
           subjectName: meta?.subjectName,
           reason: `Recent practice accuracy is ${Math.round(accuracy)}% (target: 60%+).`,
           ctaLabel: "Practice Topic",
-          ctaHref: "/app/study",
+          ctaHref: topicStudyHref(topicId),
           metadata: { topicId, accuracyPercent: Math.round(accuracy) },
         };
       }
@@ -379,7 +387,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: meta?.subjectName,
       reason: "Pick up where you left off in your active topic.",
       ctaLabel: "Continue Study",
-      ctaHref: "/app/study",
+      ctaHref: topicStudyHref(learning.topicId),
       metadata: { topicId: learning.topicId },
     };
   }
@@ -425,7 +433,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: nextTopic.subjectName,
       reason: "Begin with the next concept in your preparation sequence.",
       ctaLabel: "Start Studying",
-      ctaHref: "/app/study",
+      ctaHref: topicStudyHref(nextTopic.topicId),
       metadata: { topicId: nextTopic.topicId },
     };
   }
@@ -468,7 +476,8 @@ export interface PreparationProgressSnapshot {
   };
 }
 
-const COVERED_STATUSES = new Set(["learned", "practiced", "revised", "mastered"]);
+/** Covered preparation states — the single source shared by dashboard and study aggregation. */
+export const COVERED_STATUSES = new Set(["learned", "practiced", "revised", "mastered"]);
 
 export function aggregateProgressSnapshot(
   taxonomySummary: SubjectTaxonomyInfo[],
@@ -607,7 +616,7 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
       badgeLabel: `${accPct}% acc`,
       badgeVariant: "warning",
       actionLabel: "Practice",
-      actionHref: "/app/study",
+      actionHref: topicStudyHref(weak.topicId),
     });
   }
 

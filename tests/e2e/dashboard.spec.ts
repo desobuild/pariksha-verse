@@ -69,8 +69,11 @@ test.describe("Phase 6 Real Preparation Dashboard E2E", () => {
   test("4. Today's tasks can be displayed and completed", async ({ page }) => {
     await completeGuestSetup(page);
 
-    // Inject a planner task scheduled for today into IndexedDB
-    const todayStr = new Date().toISOString().split("T")[0];
+    // Inject a planner task scheduled for today into IndexedDB.
+    // Uses the LOCAL calendar date to match the app's formatISODate comparison
+    // (a UTC-derived date diverges from the local date between midnight and UTC midnight).
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     await page.evaluate(async (date) => {
       const req = indexedDB.open("pariksha_verse_db", 1);
       await new Promise<void>((resolve) => {

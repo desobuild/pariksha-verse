@@ -1,6 +1,10 @@
 import type { StorageAdapter } from "@/lib/storage/types";
 import { appStorage } from "@/lib/storage";
 import type {
+  StudySessionCreateInput,
+  TopicProgressUpsertInput,
+} from "@/domain/study";
+import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
   TopicProgressRepositoryInterface,
@@ -16,11 +20,9 @@ import type {
   UserWorkspace,
   NewUserWorkspace,
   UserTopicProgress,
-  NewUserTopicProgress,
   PlannerTask,
   NewPlannerTask,
   StudySession,
-  NewStudySession,
   RevisionItem,
   NewRevisionItem,
   PracticeSession,
@@ -140,7 +142,7 @@ export class GuestTopicProgressRepository implements TopicProgressRepositoryInte
     return list.filter((p) => p.workspaceId === workspaceId);
   }
 
-  async upsertProgress(data: NewUserTopicProgress): Promise<UserTopicProgress> {
+  async upsertProgress(data: TopicProgressUpsertInput): Promise<UserTopicProgress> {
     const list = (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
     const index = list.findIndex((p) => p.workspaceId === data.workspaceId && p.topicId === data.topicId);
 
@@ -232,7 +234,7 @@ export class GuestStudySessionRepository implements StudySessionRepositoryInterf
     return list.filter((s) => s.workspaceId === workspaceId);
   }
 
-  async createSession(data: NewStudySession): Promise<StudySession> {
+  async createSession(data: StudySessionCreateInput): Promise<StudySession> {
     const list = (await this.storage.getItem<StudySession[]>(GUEST_STORAGE_KEYS.STUDY_SESSIONS)) || [];
     const record: StudySession = {
       id: data.id || `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

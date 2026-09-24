@@ -1,9 +1,9 @@
 import { eq, and } from "drizzle-orm";
 import type { DatabaseInstance } from "@/db";
+import type { TopicProgressUpsertInput } from "@/domain/study";
 import {
   userTopicProgress,
   type UserTopicProgress,
-  type NewUserTopicProgress,
 } from "@/db/schema";
 
 export const topicProgressRepository = {
@@ -38,13 +38,14 @@ export const topicProgressRepository = {
 
   async upsertTopicProgress(
     db: DatabaseInstance,
-    data: NewUserTopicProgress
+    data: TopicProgressUpsertInput
   ): Promise<UserTopicProgress> {
     const now = new Date();
     const rows = await db
       .insert(userTopicProgress)
       .values({
         ...data,
+        id: data.id || `prog_${crypto.randomUUID()}`,
         createdAt: data.createdAt || now,
         updatedAt: now,
       })

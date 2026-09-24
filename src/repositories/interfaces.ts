@@ -2,11 +2,9 @@ import type {
   UserWorkspace,
   NewUserWorkspace,
   UserTopicProgress,
-  NewUserTopicProgress,
   PlannerTask,
   NewPlannerTask,
   StudySession,
-  NewStudySession,
   RevisionItem,
   NewRevisionItem,
   PracticeSession,
@@ -22,6 +20,7 @@ import type {
   NotificationPreferences,
   NewNotificationPreferences,
 } from "@/db/schema";
+import type { StudySessionCreateInput, TopicProgressUpsertInput } from "@/domain/study";
 
 export interface WorkspaceRepositoryInterface {
   getWorkspaceById(id: string): Promise<UserWorkspace | null>;
@@ -44,7 +43,7 @@ export interface WorkspaceRepositoryInterface {
 export interface TopicProgressRepositoryInterface {
   getProgress(workspaceId: string, topicId: string): Promise<UserTopicProgress | null>;
   getAllProgressForWorkspace(workspaceId: string): Promise<UserTopicProgress[]>;
-  upsertProgress(data: NewUserTopicProgress): Promise<UserTopicProgress>;
+  upsertProgress(data: TopicProgressUpsertInput): Promise<UserTopicProgress>;
 }
 
 export interface PlannerRepositoryInterface {
@@ -56,7 +55,7 @@ export interface PlannerRepositoryInterface {
 
 export interface StudySessionRepositoryInterface {
   getSessionsForWorkspace(workspaceId: string): Promise<StudySession[]>;
-  createSession(data: NewStudySession): Promise<StudySession>;
+  createSession(data: StudySessionCreateInput): Promise<StudySession>;
 }
 
 export interface RevisionRepositoryInterface {

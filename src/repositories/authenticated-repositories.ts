@@ -1,4 +1,8 @@
 import type {
+  StudySessionCreateInput,
+  TopicProgressUpsertInput,
+} from "@/domain/study";
+import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
   TopicProgressRepositoryInterface,
@@ -14,11 +18,9 @@ import type {
   UserWorkspace,
   NewUserWorkspace,
   UserTopicProgress,
-  NewUserTopicProgress,
   PlannerTask,
   NewPlannerTask,
   StudySession,
-  NewStudySession,
   RevisionItem,
   NewRevisionItem,
   PracticeSession,
@@ -114,30 +116,52 @@ export class AuthenticatedWorkspaceRepository implements WorkspaceRepositoryInte
 }
 
 export class AuthenticatedTopicProgressRepository implements TopicProgressRepositoryInterface {
-  async getProgress(): Promise<UserTopicProgress | null> { return null; }
-  async getAllProgressForWorkspace(): Promise<UserTopicProgress[]> { return []; }
-  async upsertProgress(data: NewUserTopicProgress): Promise<UserTopicProgress> {
+  private revive(row: UserTopicProgress): UserTopicProgress {
     return {
-      id: data.id || "prog_temp",
-      workspaceId: data.workspaceId,
-      topicId: data.topicId,
-      status: data.status ?? "not_started",
-      startedAt: null,
-      learnedAt: null,
-      practicedAt: null,
-      revisedAt: null,
-      masteredAt: null,
-      practiceAttempts: data.practiceAttempts ?? 0,
-      correctAnswers: data.correctAnswers ?? 0,
-      incorrectAnswers: data.incorrectAnswers ?? 0,
-      accuracy: data.accuracy ?? 0,
-      lastStudiedAt: null,
-      lastRevisedAt: null,
-      nextRevisionAt: null,
-      notes: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...row,
+      startedAt: row.startedAt ? new Date(row.startedAt) : null,
+      learnedAt: row.learnedAt ? new Date(row.learnedAt) : null,
+      practicedAt: row.practicedAt ? new Date(row.practicedAt) : null,
+      revisedAt: row.revisedAt ? new Date(row.revisedAt) : null,
+      masteredAt: row.masteredAt ? new Date(row.masteredAt) : null,
+      lastStudiedAt: row.lastStudiedAt ? new Date(row.lastStudiedAt) : null,
+      lastRevisedAt: row.lastRevisedAt ? new Date(row.lastRevisedAt) : null,
+      nextRevisionAt: row.nextRevisionAt ? new Date(row.nextRevisionAt) : null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
     };
+  }
+
+  async getProgress(workspaceId: string, topicId: string): Promise<UserTopicProgress | null> {
+    const all = await this.getAllProgressForWorkspace(workspaceId);
+    return all.find((p) => p.topicId === topicId) || null;
+  }
+
+  async getAllProgressForWorkspace(workspaceId: string): Promise<UserTopicProgress[]> {
+    try {
+      const res = await fetch(
+        `/api/progress?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { progress?: UserTopicProgress[] };
+      return (data.progress || []).map((p) => this.revive(p));
+    } catch {
+      return [];
+    }
+  }
+
+  async upsertProgress(data: TopicProgressUpsertInput): Promise<UserTopicProgress> {
+    const res = await fetch("/api/progress", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to save topic progress on server");
+    }
+    return this.revive((await res.json()) as UserTopicProgress);
   }
 }
 
@@ -165,20 +189,41 @@ export class AuthenticatedPlannerRepository implements PlannerRepositoryInterfac
 }
 
 export class AuthenticatedStudySessionRepository implements StudySessionRepositoryInterface {
-  async getSessionsForWorkspace(): Promise<StudySession[]> { return []; }
-  async createSession(data: NewStudySession): Promise<StudySession> {
+  private revive(row: StudySession): StudySession {
     return {
-      id: data.id || "sess_temp",
-      workspaceId: data.workspaceId,
-      plannerTaskId: null,
-      topicId: null,
-      durationMinutes: data.durationMinutes ?? 0,
-      sessionType: "focused",
-      startedAt: new Date(),
-      endedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...row,
+      startedAt: new Date(row.startedAt),
+      endedAt: row.endedAt ? new Date(row.endedAt) : null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
     };
+  }
+
+  async getSessionsForWorkspace(workspaceId: string): Promise<StudySession[]> {
+    try {
+      const res = await fetch(
+        `/api/study-sessions?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { sessions?: StudySession[] };
+      return (data.sessions || []).map((s) => this.revive(s));
+    } catch {
+      return [];
+    }
+  }
+
+  async createSession(data: StudySessionCreateInput): Promise<StudySession> {
+    const res = await fetch("/api/study-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to save study session on server");
+    }
+    return this.revive((await res.json()) as StudySession);
   }
 }
 
