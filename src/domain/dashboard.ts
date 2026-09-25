@@ -559,10 +559,28 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
   const endOfToday = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999).getTime();
   const todayStr = formatISODate(refDate);
 
+  // Union of revision schedules per topic: revision_items are authoritative;
+  // progress.nextRevisionAt covers topics scheduled before their first
+  // completion (Phase 8 emergent scheduling from marking a topic covered).
+  const scheduleByTopic = new Map<string, number>();
+  for (const p of context.progressList) {
+    if (p.nextRevisionAt) {
+      const t = new Date(p.nextRevisionAt).getTime();
+      if (!isNaN(t)) scheduleByTopic.set(p.topicId, t);
+    }
+  }
+  for (const r of context.revisionItems) {
+    if (r.status === "scheduled" && r.nextRevisionAt) {
+      const t = new Date(r.nextRevisionAt).getTime();
+      if (!isNaN(t)) scheduleByTopic.set(r.topicId, t);
+    } else {
+      scheduleByTopic.delete(r.topicId);
+    }
+  }
+  const scheduledTimes = [...scheduleByTopic.values()];
+
   // 1. Revision Overdue
-  const overdueCount = context.revisionItems.filter(
-    (r) => r.status === "scheduled" && r.nextRevisionAt && new Date(r.nextRevisionAt).getTime() < todayMidnight
-  ).length;
+  const overdueCount = scheduledTimes.filter((t) => t < todayMidnight).length;
 
   if (overdueCount > 0) {
     items.push({
@@ -573,17 +591,13 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
       badgeLabel: `${overdueCount} overdue`,
       badgeVariant: "urgent",
       actionLabel: "Revise",
-      actionHref: "/app/study",
+      actionHref: "/app/revision",
     });
   }
 
   // 2. Revision Due Today (if not already overdue)
-  const dueTodayCount = context.revisionItems.filter(
-    (r) =>
-      r.status === "scheduled" &&
-      r.nextRevisionAt &&
-      new Date(r.nextRevisionAt).getTime() >= todayMidnight &&
-      new Date(r.nextRevisionAt).getTime() <= endOfToday
+  const dueTodayCount = scheduledTimes.filter(
+    (t) => t >= todayMidnight && t <= endOfToday
   ).length;
 
   if (dueTodayCount > 0) {
@@ -595,7 +609,7 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
       badgeLabel: `${dueTodayCount} due`,
       badgeVariant: "warning",
       actionLabel: "Review",
-      actionHref: "/app/study",
+      actionHref: "/app/revision",
     });
   }
 

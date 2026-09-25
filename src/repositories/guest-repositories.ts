@@ -4,6 +4,7 @@ import type {
   StudySessionCreateInput,
   TopicProgressUpsertInput,
 } from "@/domain/study";
+import type { RevisionItemUpsertInput } from "@/domain/revision";
 import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
@@ -24,7 +25,6 @@ import type {
   NewPlannerTask,
   StudySession,
   RevisionItem,
-  NewRevisionItem,
   PracticeSession,
   NewPracticeSession,
   SavedResource,
@@ -262,7 +262,7 @@ export class GuestRevisionRepository implements RevisionRepositoryInterface {
     return list.filter((r) => r.workspaceId === workspaceId);
   }
 
-  async upsertRevisionItem(data: NewRevisionItem): Promise<RevisionItem> {
+  async upsertRevisionItem(data: RevisionItemUpsertInput): Promise<RevisionItem> {
     const list = (await this.storage.getItem<RevisionItem[]>(GUEST_STORAGE_KEYS.REVISION_ITEMS)) || [];
     const index = list.findIndex((r) => r.workspaceId === data.workspaceId && r.topicId === data.topicId);
     const record: RevisionItem = {

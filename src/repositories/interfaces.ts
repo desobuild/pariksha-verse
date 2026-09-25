@@ -6,7 +6,6 @@ import type {
   NewPlannerTask,
   StudySession,
   RevisionItem,
-  NewRevisionItem,
   PracticeSession,
   NewPracticeSession,
   SavedResource,
@@ -21,6 +20,7 @@ import type {
   NewNotificationPreferences,
 } from "@/db/schema";
 import type { StudySessionCreateInput, TopicProgressUpsertInput } from "@/domain/study";
+import type { RevisionItemUpsertInput } from "@/domain/revision";
 
 export interface WorkspaceRepositoryInterface {
   getWorkspaceById(id: string): Promise<UserWorkspace | null>;
@@ -60,7 +60,7 @@ export interface StudySessionRepositoryInterface {
 
 export interface RevisionRepositoryInterface {
   getRevisionItems(workspaceId: string): Promise<RevisionItem[]>;
-  upsertRevisionItem(data: NewRevisionItem): Promise<RevisionItem>;
+  upsertRevisionItem(data: RevisionItemUpsertInput): Promise<RevisionItem>;
 }
 
 export interface PracticeRepositoryInterface {

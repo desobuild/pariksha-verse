@@ -5,6 +5,7 @@ import type {
   UserTopicProgress,
 } from "@/db/schema";
 import { COVERED_STATUSES, getAllTopicsForAttempt } from "./dashboard";
+import { scheduleRevisionForStatusChange, toDate } from "./revision";
 
 /**
  * Study module domain logic (Phase 7).
@@ -362,6 +363,10 @@ export interface TopicStatusChangeInput {
  * fields from the existing row and stamping the milestone timestamps that
  * match the new status. Resetting to "not_started" clears preparation
  * timestamps but keeps factual practice statistics.
+ *
+ * Phase 8: entering a covered status schedules the first spaced revision
+ * when none exists (deterministic +1 day); an existing schedule is never
+ * overwritten, and reset clears it. Rules live in the revision domain.
  */
 export function applyTopicStatusChange(
   input: TopicStatusChangeInput,
@@ -385,7 +390,12 @@ export function applyTopicStatusChange(
     accuracy: existing?.accuracy ?? 0,
     lastStudiedAt: existing?.lastStudiedAt ?? null,
     lastRevisedAt: existing?.lastRevisedAt ?? null,
-    nextRevisionAt: existing?.nextRevisionAt ?? null,
+    nextRevisionAt: scheduleRevisionForStatusChange(
+      status,
+      toDate(existing?.nextRevisionAt ?? null),
+      Boolean(toDate(existing?.lastRevisedAt ?? null) || toDate(existing?.revisedAt ?? null)),
+      at
+    ),
     notes: existing?.notes ?? null,
     createdAt: existing?.createdAt ?? at,
   };

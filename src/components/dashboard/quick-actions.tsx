@@ -22,7 +22,7 @@ const ACTIONS = [
   {
     title: "Revise",
     description: "Scheduled queue",
-    href: "/app/study",
+    href: "/app/revision",
     icon: RotateCcw,
   },
   {

@@ -8,4 +8,4 @@ export * from "./chapter.repository";
 export * from "./topic.repository";
 export * from "./workspace.repository";
 export * from "./progress.repository";
-
+export * from "./revision.repository";

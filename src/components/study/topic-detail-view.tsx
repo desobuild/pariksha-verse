@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarClock, Target } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, Loader2, Target } from "lucide-react";
 import { PageContainer } from "@/components/navigation/page-container";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { ErrorState } from "@/components/shared/error-state";
@@ -21,6 +21,14 @@ import {
   applyTopicStatusChange,
   type TopicStatus,
 } from "@/domain/study";
+import {
+  applyRevisionCompletion,
+  diffLocalDays,
+  isRevisionDue,
+  isRevisionEligible,
+  isRevisionOverdue,
+  toDate,
+} from "@/domain/revision";
 import type {
   PracticeSession,
   RevisionItem,
@@ -57,6 +65,10 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
   const [savingStatus, setSavingStatus] = React.useState(false);
+  const [markingRevision, setMarkingRevision] = React.useState(false);
+  const [revisionFeedback, setRevisionFeedback] = React.useState<
+    { kind: "success" | "error"; message: string } | null
+  >(null);
 
   React.useEffect(() => {
     if (status === "ready" && !workspace) {
@@ -173,6 +185,7 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
   const handleStatusChange = async (next: TopicStatus) => {
     if (!workspace) return;
     setSavingStatus(true);
+    setRevisionFeedback(null);
     try {
       const saved = await repos.progress.upsertProgress(
         applyTopicStatusChange({
@@ -195,6 +208,51 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
       );
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  const handleMarkRevised = async () => {
+    if (!workspace || markingRevision) return;
+    setMarkingRevision(true);
+    setRevisionFeedback(null);
+    const completion = applyRevisionCompletion({
+      workspaceId: workspace.id,
+      topicId: metadata.topicId,
+      existingProgress: progress,
+      existingRevisionItem: revisionItem,
+    });
+    try {
+      // Revision item first (authoritative revisionNumber), then progress
+      // timestamps/schedule; the queue reads either, so a partial write
+      // still leaves a consistent schedule behind.
+      const savedItem = await repos.revision.upsertRevisionItem(completion.revisionItem);
+      const savedProgress = await repos.progress.upsertProgress(completion.progress);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              revisionItems: [
+                ...prev.revisionItems.filter((r) => r.topicId !== savedItem.topicId),
+                savedItem,
+              ],
+              progressList: [
+                ...prev.progressList.filter((p) => p.topicId !== savedProgress.topicId),
+                savedProgress,
+              ],
+            }
+          : prev
+      );
+      setRevisionFeedback({
+        kind: "success",
+        message: `Revision completed. Next review in ${completion.nextIntervalDays} ${
+          completion.nextIntervalDays === 1 ? "day" : "days"
+        }.`,
+      });
+    } catch {
+      // Nothing was persisted on failure paths that throw; state stays intact.
+      setRevisionFeedback({ kind: "error", message: "Couldn't update revision. Try again." });
+    } finally {
+      setMarkingRevision(false);
     }
   };
 
@@ -245,9 +303,15 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
     }
   };
 
-  const nextRevisionAt = revisionItem?.nextRevisionAt ?? progress?.nextRevisionAt ?? null;
-  const revisionStatus = revisionItem?.status ?? (progress?.nextRevisionAt ? "scheduled" : null);
-  const revisionDue = getRevisionDueInfo(nextRevisionAt);
+  const nextRevisionAt = toDate(revisionItem?.nextRevisionAt ?? progress?.nextRevisionAt ?? null);
+  const lastRevisedAt = toDate(revisionItem?.lastRevisedAt ?? progress?.lastRevisedAt ?? null);
+  const revisionEligible = isRevisionEligible(
+    progress?.status ?? "not_started",
+    nextRevisionAt,
+    revisionItem ?? null
+  );
+  const revisionDue = revisionEligible && nextRevisionAt !== null && isRevisionDue(nextRevisionAt);
+  const revisionOverdue = revisionEligible && nextRevisionAt !== null && isRevisionOverdue(nextRevisionAt);
 
   return (
     <PageContainer className="py-6 sm:py-8" size="default">
@@ -296,22 +360,61 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
           </dl>
         </Card>
 
-        {/* Revision info — surfaced from existing data, no engine in Phase 7 */}
+        {/* Revision — spaced review state with the Phase 8 completion action */}
         <Card variant="base" className="p-5">
           <div className="flex items-center gap-2">
             <CalendarClock className="h-4 w-4 text-primary" aria-hidden="true" />
             <h2 className="type-h4">Revision</h2>
           </div>
           {nextRevisionAt ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <dl className="grid flex-1 grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
+            <div className="mt-3">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
                 <TimelineRow label="Next revision" value={formatDate(nextRevisionAt)} />
                 <TimelineRow
-                  label="Status"
-                  value={revisionStatus ? revisionStatus.replace("_", " ") : "—"}
+                  label="Last revised"
+                  value={lastRevisedAt ? formatRelativeDay(lastRevisedAt) : "—"}
                 />
               </dl>
-              <Badge variant={revisionDue.variant}>{revisionDue.label}</Badge>
+              <div className="mt-3.5 flex flex-wrap items-center gap-3">
+                {revisionDue ? (
+                  <>
+                    <Badge variant={revisionOverdue ? "warning" : "primary"}>
+                      <span className="sr-only">Revision: </span>
+                      {revisionOverdue ? overdueLabel(revisionOverdueDays(nextRevisionAt)) : "Due today"}
+                    </Badge>
+                    <Button
+                      onClick={() => void handleMarkRevised()}
+                      disabled={markingRevision}
+                      className="min-h-[44px] gap-2 font-semibold"
+                    >
+                      {markingRevision && (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      )}
+                      Mark as Revised
+                    </Button>
+                  </>
+                ) : (
+                  <Badge variant="neutral">
+                    <span className="sr-only">Revision: </span>
+                    {upcomingLabel(nextRevisionAt)}
+                  </Badge>
+                )}
+              </div>
+              {revisionFeedback && (
+                <p
+                  role="status"
+                  className={
+                    revisionFeedback.kind === "success"
+                      ? "mt-3 flex items-center gap-1.5 text-sm font-medium text-success"
+                      : "mt-3 text-sm font-medium text-destructive"
+                  }
+                >
+                  {revisionFeedback.kind === "success" && (
+                    <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  )}
+                  {revisionFeedback.message}
+                </p>
+              )}
             </div>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">No revision scheduled yet.</p>
@@ -364,20 +467,26 @@ function TimelineRow({
   );
 }
 
-function getRevisionDueInfo(nextRevisionAt: Date | null): {
-  label: string;
-  variant: "neutral" | "warning";
-} {
-  if (!nextRevisionAt) return { label: "", variant: "neutral" };
-  const due = new Date(nextRevisionAt);
-  if (isNaN(due.getTime())) return { label: "", variant: "neutral" };
+/** Calendar days a schedule is in the past (never below 1 when shown). */
+function revisionOverdueDays(nextRevisionAt: Date): number {
   const now = new Date();
-  const dueMidnight = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const diffDays = Math.round((dueMidnight - todayMidnight) / 86400000);
-  if (diffDays < 0) {
-    return { label: `Overdue by ${Math.abs(diffDays)} ${Math.abs(diffDays) === 1 ? "day" : "days"}`, variant: "warning" };
-  }
-  if (diffDays === 0) return { label: "Due today", variant: "warning" };
-  return { label: `Due in ${diffDays} ${diffDays === 1 ? "day" : "days"}`, variant: "neutral" };
+  return Math.max(1, diffLocalDays(nextRevisionAt, now));
+}
+
+function overdueLabel(days: number): string {
+  return days === 1 ? "Overdue by 1 day" : `Overdue by ${days} days`;
+}
+
+function upcomingLabel(nextRevisionAt: Date): string {
+  const days = Math.max(0, diffLocalDays(new Date(), nextRevisionAt));
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
+
+function formatRelativeDay(d: Date): string {
+  const diff = diffLocalDays(d, new Date());
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }

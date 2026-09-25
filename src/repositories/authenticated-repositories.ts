@@ -2,6 +2,7 @@ import type {
   StudySessionCreateInput,
   TopicProgressUpsertInput,
 } from "@/domain/study";
+import type { RevisionItemUpsertInput } from "@/domain/revision";
 import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
@@ -22,7 +23,6 @@ import type {
   NewPlannerTask,
   StudySession,
   RevisionItem,
-  NewRevisionItem,
   PracticeSession,
   NewPracticeSession,
   SavedResource,
@@ -228,19 +228,41 @@ export class AuthenticatedStudySessionRepository implements StudySessionReposito
 }
 
 export class AuthenticatedRevisionRepository implements RevisionRepositoryInterface {
-  async getRevisionItems(): Promise<RevisionItem[]> { return []; }
-  async upsertRevisionItem(data: NewRevisionItem): Promise<RevisionItem> {
+  private revive(row: RevisionItem): RevisionItem {
     return {
-      id: data.id || "rev_temp",
-      workspaceId: data.workspaceId,
-      topicId: data.topicId,
-      revisionNumber: 1,
-      nextRevisionAt: null,
-      lastRevisedAt: null,
-      status: "scheduled",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...row,
+      lastRevisedAt: row.lastRevisedAt ? new Date(row.lastRevisedAt) : null,
+      nextRevisionAt: row.nextRevisionAt ? new Date(row.nextRevisionAt) : null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
     };
+  }
+
+  async getRevisionItems(workspaceId: string): Promise<RevisionItem[]> {
+    try {
+      const res = await fetch(
+        `/api/revision?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { revisionItems?: RevisionItem[] };
+      return (data.revisionItems || []).map((r) => this.revive(r));
+    } catch {
+      return [];
+    }
+  }
+
+  async upsertRevisionItem(data: RevisionItemUpsertInput): Promise<RevisionItem> {
+    const res = await fetch("/api/revision", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to save revision item on server");
+    }
+    return this.revive((await res.json()) as RevisionItem);
   }
 }
 
