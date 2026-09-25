@@ -26,6 +26,11 @@ import type {
   QuestionSessionResult,
 } from "@/domain/practice-engine";
 import type {
+  MockTestDetail,
+  MockTestSessionDetail,
+  MockTestResultDetail,
+} from "@/domain/mock-engine";
+import type {
   UserWorkspace,
   NewUserWorkspace,
   UserTopicProgress,
@@ -36,7 +41,6 @@ import type {
   PracticeSession,
   SavedResource,
   NewSavedResource,
-  MockTest,
   NewMockTest,
   MockTestResult,
   NewMockTestResult,
@@ -329,38 +333,213 @@ export class AuthenticatedSavedResourceRepository implements SavedResourceReposi
 }
 
 export class AuthenticatedMockTestRepository implements MockTestRepositoryInterface {
-  async getMockTests(): Promise<MockTest[]> { return []; }
-  async createMockTest(data: NewMockTest): Promise<MockTest> {
+  private reviveMockTest(m: MockTestDetail): MockTestDetail {
     return {
-      id: data.id || "mock_temp",
-      workspaceId: data.workspaceId,
-      title: data.title,
-      type: data.type,
-      scheduledAt: null,
-      durationMinutes: data.durationMinutes,
-      source: null,
-      externalUrl: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...m,
+      createdAt: new Date(m.createdAt),
+      updatedAt: new Date(m.updatedAt),
+      scheduledAt: m.scheduledAt ? new Date(m.scheduledAt) : null,
     };
   }
+
+  private reviveSession(s: MockTestSessionDetail): MockTestSessionDetail {
+    return {
+      ...s,
+      startedAt: new Date(s.startedAt),
+      expiresAt: new Date(s.expiresAt),
+      completedAt: s.completedAt ? new Date(s.completedAt) : null,
+      mockTest: this.reviveMockTest(s.mockTest),
+      questions: s.questions.map((q) => ({
+        ...q,
+        createdAt: new Date(q.createdAt),
+        updatedAt: new Date(q.updatedAt),
+      })),
+    };
+  }
+
+  private reviveResult(r: MockTestResultDetail): MockTestResultDetail {
+    return {
+      ...r,
+      completedAt: new Date(r.completedAt),
+    };
+  }
+
+  async getMockTests(workspaceId: string): Promise<MockTestDetail[]> {
+    try {
+      const res = await fetch(`/api/mock-tests?workspaceId=${encodeURIComponent(workspaceId)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as MockTestDetail[];
+      return (data || []).map((m) => this.reviveMockTest(m));
+    } catch {
+      return [];
+    }
+  }
+
+  async getMockTestById(id: string, workspaceId: string): Promise<MockTestDetail | null> {
+    try {
+      const res = await fetch(
+        `/api/mock-tests/${encodeURIComponent(id)}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as MockTestDetail;
+      return this.reviveMockTest(data);
+    } catch {
+      return null;
+    }
+  }
+
+  async createMockTest(data: NewMockTest): Promise<MockTestDetail> {
+    const res = await fetch("/api/mock-tests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Failed to create mock test");
+    const created = (await res.json()) as MockTestDetail;
+    return this.reviveMockTest(created);
+  }
+
+  async createSession(params: {
+    workspaceId: string;
+    mockTestId: string;
+    seed?: number;
+  }): Promise<MockTestSessionDetail> {
+    const res = await fetch(`/api/mock-tests/${encodeURIComponent(params.mockTestId)}/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || "Failed to create mock test session");
+    }
+    const session = (await res.json()) as MockTestSessionDetail;
+    return this.reviveSession(session);
+  }
+
+  async getSession(sessionId: string, workspaceId: string): Promise<MockTestSessionDetail | null> {
+    try {
+      const res = await fetch(
+        `/api/mock-tests/session/${encodeURIComponent(sessionId)}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return null;
+      const session = (await res.json()) as MockTestSessionDetail;
+      return this.reviveSession(session);
+    } catch {
+      return null;
+    }
+  }
+
+  async updateSessionAnswer(params: {
+    workspaceId: string;
+    sessionId: string;
+    questionId: string;
+    selectedOptionId?: string | null;
+    isMarkedForReview?: boolean;
+    currentIndex?: number;
+  }): Promise<void> {
+    try {
+      await fetch(`/api/mock-tests/session/${encodeURIComponent(params.sessionId)}/answer`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        credentials: "include",
+      });
+    } catch {
+      // Best-effort client sync
+    }
+  }
+
+  async submitSession(params: {
+    workspaceId: string;
+    sessionId: string;
+    submissionStatus?: "completed" | "auto_submitted";
+    answers?: Record<string, string | null>;
+    markedForReview?: string[];
+    completedAt?: Date;
+  }): Promise<MockTestResultDetail> {
+    const res = await fetch(`/api/mock-tests/session/${encodeURIComponent(params.sessionId)}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || "Failed to submit mock test");
+    }
+    const result = (await res.json()) as MockTestResultDetail;
+    return this.reviveResult(result);
+  }
+
   async saveResult(data: NewMockTestResult): Promise<MockTestResult> {
     return {
       id: data.id || "res_temp",
       mockTestId: data.mockTestId,
       score: data.score,
       totalMarks: data.totalMarks,
-      correct: 0,
-      incorrect: 0,
-      unattempted: 0,
-      accuracy: 0,
+      correct: data.correct ?? 0,
+      incorrect: data.incorrect ?? 0,
+      unattempted: data.unattempted ?? 0,
+      accuracy: data.accuracy ?? 0,
       notes: null,
       completedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
+      sessionId: data.sessionId ?? null,
+      timeSpentSeconds: data.timeSpentSeconds ?? 0,
+      submissionStatus: data.submissionStatus ?? "completed",
+      sectionResults: data.sectionResults ?? null,
+      questionResults: data.questionResults ?? null,
     };
   }
-  async getResult(): Promise<MockTestResult | null> { return null; }
+
+  async getResult(mockTestId: string, workspaceId?: string): Promise<MockTestResultDetail | null> {
+    try {
+      const url = workspaceId
+        ? `/api/mock-tests/${encodeURIComponent(mockTestId)}/result?workspaceId=${encodeURIComponent(workspaceId)}`
+        : `/api/mock-tests/${encodeURIComponent(mockTestId)}/result`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return null;
+      const data = (await res.json()) as MockTestResultDetail;
+      return this.reviveResult(data);
+    } catch {
+      return null;
+    }
+  }
+
+  async getResultBySessionId(sessionId: string, workspaceId: string): Promise<MockTestResultDetail | null> {
+    try {
+      const res = await fetch(
+        `/api/mock-tests/session/${encodeURIComponent(sessionId)}/result?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as MockTestResultDetail;
+      return this.reviveResult(data);
+    } catch {
+      return null;
+    }
+  }
+
+  async getAllResultsForWorkspace(workspaceId: string): Promise<MockTestResultDetail[]> {
+    try {
+      const res = await fetch(`/api/mock-tests/results?workspaceId=${encodeURIComponent(workspaceId)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as MockTestResultDetail[];
+      return (data || []).map((r) => this.reviveResult(r));
+    } catch {
+      return [];
+    }
+  }
 }
 
 export class AuthenticatedPreferencesRepository implements PreferencesRepositoryInterface {

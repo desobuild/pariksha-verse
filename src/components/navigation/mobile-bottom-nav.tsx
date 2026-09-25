@@ -23,6 +23,15 @@ export function MobileBottomNav() {
     return null;
   }
 
+  // Hide mobile bottom nav during active mock exam sessions (focused exam simulation mode)
+  if (
+    pathname?.includes("/app/mock-tests/") &&
+    pathname?.includes("/session/") &&
+    !pathname.endsWith("/result")
+  ) {
+    return null;
+  }
+
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border-subtle bg-surface shadow-subtle safe-area-bottom"

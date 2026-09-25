@@ -11,6 +11,7 @@ import type {
   UserWorkspace,
 } from "@/db/schema";
 import type { DomainRepositories } from "@/repositories/interfaces";
+import type { MockTestDetail } from "./mock-engine/types";
 import { getExamAttempt, getExamForAttempt } from "./exam-catalog";
 import { formatStudyGoal, getPreparationStageLabel } from "./preparation";
 import { PRACTICE_WEAK_ACCURACY_BPS } from "./practice";
@@ -238,7 +239,7 @@ export interface DashboardDataContext {
   revisionItems: RevisionItem[];
   practiceSessions: PracticeSession[];
   studySessions: StudySession[];
-  mockTests: MockTest[];
+  mockTests: (MockTest | MockTestDetail)[];
   preferences: UserPreferences | null;
   referenceDate?: Date;
 }

@@ -9,7 +9,6 @@ import type {
   PracticeSession,
   SavedResource,
   NewSavedResource,
-  MockTest,
   NewMockTest,
   MockTestResult,
   NewMockTestResult,
@@ -81,11 +80,42 @@ export interface SavedResourceRepositoryInterface {
   removeSavedResource(workspaceId: string, resourceId: string): Promise<void>;
 }
 
+import type {
+  MockTestDetail,
+  MockTestSessionDetail,
+  MockTestResultDetail,
+} from "@/domain/mock-engine";
+
 export interface MockTestRepositoryInterface {
-  getMockTests(workspaceId: string): Promise<MockTest[]>;
-  createMockTest(data: NewMockTest): Promise<MockTest>;
+  getMockTests(workspaceId: string): Promise<MockTestDetail[]>;
+  getMockTestById(id: string, workspaceId: string): Promise<MockTestDetail | null>;
+  createMockTest(data: NewMockTest): Promise<MockTestDetail>;
+  createSession(params: {
+    workspaceId: string;
+    mockTestId: string;
+    seed?: number;
+  }): Promise<MockTestSessionDetail>;
+  getSession(sessionId: string, workspaceId: string): Promise<MockTestSessionDetail | null>;
+  updateSessionAnswer(params: {
+    workspaceId: string;
+    sessionId: string;
+    questionId: string;
+    selectedOptionId?: string | null;
+    isMarkedForReview?: boolean;
+    currentIndex?: number;
+  }): Promise<void>;
+  submitSession(params: {
+    workspaceId: string;
+    sessionId: string;
+    submissionStatus?: "completed" | "auto_submitted";
+    answers?: Record<string, string | null>;
+    markedForReview?: string[];
+    completedAt?: Date;
+  }): Promise<MockTestResultDetail>;
   saveResult(data: NewMockTestResult): Promise<MockTestResult>;
-  getResult(mockTestId: string): Promise<MockTestResult | null>;
+  getResult(mockTestId: string, workspaceId?: string): Promise<MockTestResultDetail | null>;
+  getResultBySessionId(sessionId: string, workspaceId: string): Promise<MockTestResultDetail | null>;
+  getAllResultsForWorkspace(workspaceId: string): Promise<MockTestResultDetail[]>;
 }
 
 export interface PreferencesRepositoryInterface {
