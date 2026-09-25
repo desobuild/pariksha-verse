@@ -17,7 +17,22 @@ import type {
   SavedResourceRepositoryInterface,
   MockTestRepositoryInterface,
   PreferencesRepositoryInterface,
+  QuestionRepositoryInterface,
+  QuestionSessionRepositoryInterface,
 } from "./interfaces";
+import {
+  FIXTURE_QUESTIONS,
+  filterQuestionsByScope,
+  selectQuestionsForSession,
+  gradeQuestionSession,
+  type QuestionWithOptions,
+  type PracticeScope,
+  type CreateQuestionSessionInput,
+  type QuestionSessionWithAttempts,
+  type QuestionSessionResult,
+} from "@/domain/practice-engine";
+import { applyPracticeSessionToProgress } from "@/domain/practice";
+import { getTopicMetadata } from "@/domain/dashboard";
 import type {
   UserWorkspace,
   NewUserWorkspace,
@@ -51,6 +66,8 @@ export const GUEST_STORAGE_KEYS = {
   MOCK_TEST_RESULTS: "guest:mock_test_results",
   USER_PREFERENCES: "guest:user_preferences",
   NOTIFICATION_PREFERENCES: "guest:notification_preferences",
+  QUESTION_SESSIONS: "guest:question_sessions",
+  QUESTION_ATTEMPTS: "guest:question_attempts",
 };
 
 export class GuestWorkspaceRepository implements WorkspaceRepositoryInterface {
@@ -455,16 +472,351 @@ export class GuestPreferencesRepository implements PreferencesRepositoryInterfac
   }
 }
 
+export class GuestQuestionRepository implements QuestionRepositoryInterface {
+  async getQuestionById(id: string): Promise<QuestionWithOptions | null> {
+    const found = FIXTURE_QUESTIONS.find((q) => q.id === id);
+    return found ? { ...found } : null;
+  }
+
+  async getQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+    limit?: number;
+  }): Promise<QuestionWithOptions[]> {
+    const filtered = filterQuestionsByScope(FIXTURE_QUESTIONS, params.scope, params.examId);
+    if (params.limit !== undefined && params.limit > 0) {
+      return filtered.slice(0, params.limit);
+    }
+    return filtered;
+  }
+
+  async countQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+  }): Promise<number> {
+    const filtered = filterQuestionsByScope(FIXTURE_QUESTIONS, params.scope, params.examId);
+    return filtered.length;
+  }
+
+  async getAllQuestions(): Promise<QuestionWithOptions[]> {
+    return [...FIXTURE_QUESTIONS];
+  }
+}
+
+interface StoredQuestionSession {
+  id: string;
+  workspaceId: string;
+  scopeType: QuestionSessionWithAttempts["scopeType"];
+  scopeId: string;
+  totalQuestions: number;
+  status: QuestionSessionWithAttempts["status"];
+  durationSeconds: number;
+  startedAt: string | Date;
+  completedAt: string | Date | null;
+  questionIds: string[];
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+interface StoredQuestionAttempt {
+  id: string;
+  sessionId: string;
+  questionId: string;
+  selectedOptionId: string | null;
+  isCorrect: boolean | null;
+  displayOrder: number;
+  answeredAt: string | Date | null;
+}
+
+export class GuestQuestionSessionRepository implements QuestionSessionRepositoryInterface {
+  constructor(
+    private storage: StorageAdapter = appStorage,
+    private questionRepo: QuestionRepositoryInterface,
+    private practiceRepo: PracticeRepositoryInterface,
+    private progressRepo: TopicProgressRepositoryInterface
+  ) {}
+
+  async createSession(input: CreateQuestionSessionInput): Promise<QuestionSessionWithAttempts> {
+    const eligible = await this.questionRepo.getQuestionsForScope({
+      scope: input.scope,
+    });
+
+    const selected = selectQuestionsForSession(eligible, input.questionCount, {
+      seed: input.options?.seed,
+      shuffle: input.options?.shuffle,
+    });
+
+    const sessionId = `q_sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date();
+
+    const scopeId =
+      input.scope.type === "topic"
+        ? input.scope.topicId
+        : input.scope.type === "subject"
+        ? input.scope.subjectId
+        : input.scope.examAttemptId;
+
+    const storedSession: StoredQuestionSession = {
+      id: sessionId,
+      workspaceId: input.workspaceId,
+      scopeType: input.scope.type,
+      scopeId,
+      totalQuestions: selected.length,
+      status: "in_progress",
+      durationSeconds: 0,
+      startedAt: now,
+      completedAt: null,
+      questionIds: selected.map((q) => q.id),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const storedAttempts: StoredQuestionAttempt[] = selected.map((q, idx) => ({
+      id: `q_att_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+      sessionId,
+      questionId: q.id,
+      selectedOptionId: null,
+      isCorrect: null,
+      displayOrder: idx + 1,
+      answeredAt: null,
+    }));
+
+    // Save session
+    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    sessions.push(storedSession);
+    await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_SESSIONS, sessions);
+
+    // Save attempts
+    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    attempts.push(...storedAttempts);
+    await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS, attempts);
+
+    return {
+      ...storedSession,
+      startedAt: now,
+      completedAt: null,
+      questions: selected,
+      attempts: storedAttempts.map((a) => ({
+        ...a,
+        answeredAt: null,
+      })),
+    };
+  }
+
+  async getSession(sessionId: string, workspaceId: string): Promise<QuestionSessionWithAttempts | null> {
+    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const sess = sessions.find((s) => s.id === sessionId && s.workspaceId === workspaceId);
+    if (!sess) return null;
+
+    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const sessionAttempts = attempts
+      .filter((a) => a.sessionId === sessionId)
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+
+    const questions: QuestionWithOptions[] = [];
+    for (const qid of sess.questionIds) {
+      const q = await this.questionRepo.getQuestionById(qid);
+      if (q) questions.push(q);
+    }
+
+    return {
+      id: sess.id,
+      workspaceId: sess.workspaceId,
+      scopeType: sess.scopeType,
+      scopeId: sess.scopeId,
+      totalQuestions: sess.totalQuestions,
+      status: sess.status,
+      durationSeconds: sess.durationSeconds,
+      startedAt: new Date(sess.startedAt),
+      completedAt: sess.completedAt ? new Date(sess.completedAt) : null,
+      questions,
+      attempts: sessionAttempts.map((a) => ({
+        id: a.id,
+        sessionId: a.sessionId,
+        questionId: a.questionId,
+        selectedOptionId: a.selectedOptionId,
+        isCorrect: a.isCorrect,
+        displayOrder: a.displayOrder,
+        answeredAt: a.answeredAt ? new Date(a.answeredAt) : null,
+      })),
+    };
+  }
+
+  async recordAnswer(params: {
+    sessionId: string;
+    workspaceId: string;
+    questionId: string;
+    selectedOptionId: string | null;
+  }): Promise<void> {
+    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const target = attempts.find(
+      (a) => a.sessionId === params.sessionId && a.questionId === params.questionId
+    );
+    if (target) {
+      target.selectedOptionId = params.selectedOptionId;
+      target.answeredAt = params.selectedOptionId ? new Date() : null;
+      await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS, attempts);
+    }
+  }
+
+  async submitSession(params: {
+    sessionId: string;
+    workspaceId: string;
+    durationSeconds?: number;
+    answers?: Record<string, string | null>;
+  }): Promise<QuestionSessionResult> {
+    const session = await this.getSession(params.sessionId, params.workspaceId);
+    if (!session) {
+      throw new Error("Question session not found");
+    }
+
+    const completedAt = new Date();
+    const durationSeconds = params.durationSeconds ?? session.durationSeconds;
+
+    // Collect effective answers
+    const answersMap: Record<string, string | null> = {};
+    for (const att of session.attempts) {
+      answersMap[att.questionId] = att.selectedOptionId;
+    }
+    if (params.answers) {
+      for (const [qid, optId] of Object.entries(params.answers)) {
+        answersMap[qid] = optId;
+      }
+    }
+
+    // Authoritative grading
+    const result = gradeQuestionSession({
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+      scopeType: session.scopeType,
+      scopeId: session.scopeId,
+      questions: session.questions,
+      answers: answersMap,
+      durationSeconds,
+      completedAt,
+      metadataResolver: (topicId) => getTopicMetadata(topicId),
+    });
+
+    // 1. Update stored attempts
+    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    for (const item of result.questions) {
+      const match = attempts.find((a) => a.sessionId === session.id && a.questionId === item.questionId);
+      if (match) {
+        match.selectedOptionId = item.selectedOptionId;
+        match.isCorrect = item.isAttempted ? item.isCorrect : null;
+        match.answeredAt = item.isAttempted ? completedAt : null;
+      }
+    }
+    await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS, attempts);
+
+    // 2. Mark session completed
+    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const sessMatch = sessions.find((s) => s.id === session.id);
+    if (sessMatch) {
+      sessMatch.status = "completed";
+      sessMatch.durationSeconds = durationSeconds;
+      sessMatch.completedAt = completedAt;
+      sessMatch.updatedAt = completedAt;
+      await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_SESSIONS, sessions);
+    }
+
+    // 3. Integrate with Phase 9 Practice Performance
+    const questionsByTopic = new Map<
+      string,
+      { attempted: number; correct: number; incorrect: number }
+    >();
+
+    for (const q of result.questions) {
+      const current = questionsByTopic.get(q.topicId) || { attempted: 0, correct: 0, incorrect: 0 };
+      if (q.isAttempted) {
+        current.attempted++;
+        if (q.isCorrect) {
+          current.correct++;
+        } else {
+          current.incorrect++;
+        }
+      }
+      questionsByTopic.set(q.topicId, current);
+    }
+
+    for (const [topicId, stats] of questionsByTopic.entries()) {
+      if (stats.attempted > 0) {
+        const newPracSession = await this.practiceRepo.createPracticeSession({
+          workspaceId: session.workspaceId,
+          topicId,
+          questionCount: stats.attempted,
+          correct: stats.correct,
+          incorrect: stats.incorrect,
+          unattempted: 0,
+          durationMinutes: Math.max(1, Math.round(durationSeconds / 60)),
+          completedAt,
+        });
+
+        const [existingProgress, allSessions] = await Promise.all([
+          this.progressRepo.getProgress(session.workspaceId, topicId),
+          this.practiceRepo.getPracticeSessions(session.workspaceId),
+        ]);
+
+        const topicSessions = allSessions.filter((s) => s.topicId === topicId);
+        if (!topicSessions.some((s) => s.id === newPracSession.id)) {
+          topicSessions.push(newPracSession);
+        }
+
+        const progressPatch = applyPracticeSessionToProgress({
+          workspaceId: session.workspaceId,
+          topicId,
+          existingProgress,
+          sessions: topicSessions,
+          completedAt,
+        });
+
+        await this.progressRepo.upsertProgress(progressPatch);
+      }
+    }
+
+    return result;
+  }
+
+  async getRecentQuestionSessions(workspaceId: string): Promise<QuestionSessionWithAttempts[]> {
+    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const filtered = sessions
+      .filter((s) => s.workspaceId === workspaceId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10);
+
+    const results: QuestionSessionWithAttempts[] = [];
+    for (const s of filtered) {
+      const sess = await this.getSession(s.id, workspaceId);
+      if (sess) results.push(sess);
+    }
+    return results;
+  }
+}
+
 export function createGuestRepositories(storage: StorageAdapter = appStorage, guestId: string = "guest_default"): DomainRepositories {
+  const workspace = new GuestWorkspaceRepository(storage, guestId);
+  const progress = new GuestTopicProgressRepository(storage);
+  const planner = new GuestPlannerRepository(storage);
+  const studySession = new GuestStudySessionRepository(storage);
+  const revision = new GuestRevisionRepository(storage);
+  const practice = new GuestPracticeRepository(storage);
+  const resource = new GuestSavedResourceRepository(storage);
+  const mock = new GuestMockTestRepository(storage);
+  const preferences = new GuestPreferencesRepository(storage, guestId);
+  const question = new GuestQuestionRepository();
+  const questionSession = new GuestQuestionSessionRepository(storage, question, practice, progress);
+
   return {
-    workspace: new GuestWorkspaceRepository(storage, guestId),
-    progress: new GuestTopicProgressRepository(storage),
-    planner: new GuestPlannerRepository(storage),
-    studySession: new GuestStudySessionRepository(storage),
-    revision: new GuestRevisionRepository(storage),
-    practice: new GuestPracticeRepository(storage),
-    resource: new GuestSavedResourceRepository(storage),
-    mock: new GuestMockTestRepository(storage),
-    preferences: new GuestPreferencesRepository(storage, guestId),
+    workspace,
+    progress,
+    planner,
+    studySession,
+    revision,
+    practice,
+    resource,
+    mock,
+    preferences,
+    question,
+    questionSession,
   };
 }

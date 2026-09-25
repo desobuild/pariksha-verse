@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { PlusCircle, Target } from "lucide-react";
+import { PlusCircle, Target, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/navigation/page-container";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
@@ -21,6 +21,7 @@ import {
 } from "@/domain/practice";
 import { getSubjectTaxonomySummary } from "@/domain/dashboard";
 
+import { StartPracticeDialog } from "./start-practice-dialog";
 import { RecordPracticeDialog } from "./record-practice-dialog";
 import { PerformanceSnapshot } from "./performance-snapshot";
 import { SubjectPerformance } from "./subject-performance";
@@ -32,6 +33,7 @@ export function PracticeWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlTopicId = searchParams.get("topicId");
+  const urlMode = searchParams.get("mode");
 
   const { workspace, status } = useActiveWorkspace();
   const workspaceLoading = status === "loading";
@@ -46,7 +48,8 @@ export function PracticeWorkspace() {
   const [sessions, setSessions] = React.useState<PracticeSession[]>([]);
   const [progressList, setProgressList] = React.useState<UserTopicProgress[]>([]);
 
-  // Dialog state
+  // Dialog states
+  const [startDialogOpen, setStartDialogOpen] = React.useState(false);
   const [recordDialogOpen, setRecordDialogOpen] = React.useState(false);
   const [targetTopicId, setTargetTopicId] = React.useState<string | null>(null);
 
@@ -58,9 +61,13 @@ export function PracticeWorkspace() {
   React.useEffect(() => {
     if (urlTopicId) {
       setTargetTopicId(urlTopicId);
-      setRecordDialogOpen(true);
+      if (urlMode === "questions") {
+        setStartDialogOpen(true);
+      } else {
+        setRecordDialogOpen(true);
+      }
     }
-  }, [urlTopicId]);
+  }, [urlTopicId, urlMode]);
 
   // Load data for active workspace
   React.useEffect(() => {
@@ -191,17 +198,31 @@ export function PracticeWorkspace() {
           </div>
           <h1 className="type-h1 mt-1">Practice &amp; Performance</h1>
           <p className="mt-1 type-body text-muted-foreground">
-            Log questions attempted, track accuracy by topic, and identify focus areas.
+            Solve questions with automated evaluation or log external practice sessions.
           </p>
         </div>
 
-        <Button
-          onClick={() => handleOpenRecord()}
-          className="min-h-[44px] gap-2 font-semibold shadow-sm self-start sm:self-center"
-        >
-          <PlusCircle className="h-4 w-4" aria-hidden="true" />
-          Record Practice
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-center">
+          <Button
+            onClick={() => {
+              setTargetTopicId(null);
+              setStartDialogOpen(true);
+            }}
+            className="min-h-[44px] gap-2 font-semibold shadow-sm"
+          >
+            <Play className="h-4 w-4" aria-hidden="true" />
+            Practice Questions
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => handleOpenRecord()}
+            className="min-h-[44px] gap-2 font-semibold"
+          >
+            <PlusCircle className="h-4 w-4" aria-hidden="true" />
+            Record Practice
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -232,7 +253,10 @@ export function PracticeWorkspace() {
         {performanceFilter !== "practiced" && (
           <WeakTopicsList
             weakTopics={filteredWeakTopics}
-            onPracticeTopic={(topicId) => handleOpenRecord(topicId)}
+            onPracticeTopic={(topicId) => {
+              setTargetTopicId(topicId);
+              setStartDialogOpen(true);
+            }}
           />
         )}
 
@@ -245,14 +269,29 @@ export function PracticeWorkspace() {
         )}
       </div>
 
-      {/* Record Practice Dialog */}
+      {/* Start Question Practice Dialog */}
+      {workspace && (
+        <StartPracticeDialog
+          open={startDialogOpen}
+          onOpenChange={(open) => {
+            setStartDialogOpen(open);
+            if (!open && urlTopicId) {
+              router.replace("/app/practice", { scroll: false });
+            }
+          }}
+          initialTopicId={targetTopicId}
+          examAttemptId={examAttemptId}
+          workspaceId={workspace.id}
+        />
+      )}
+
+      {/* Record External Practice Dialog */}
       {workspace && (
         <RecordPracticeDialog
           open={recordDialogOpen}
           onOpenChange={(open) => {
             setRecordDialogOpen(open);
             if (!open && urlTopicId) {
-              // Clear topicId query param from URL without refreshing
               router.replace("/app/practice", { scroll: false });
             }
           }}

@@ -18,6 +18,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
 export function MobileBottomNav() {
   const pathname = usePathname();
 
+  // Hide mobile bottom nav during active question player sessions for distraction-free practice
+  if (pathname?.includes("/app/practice/session/") && !pathname.endsWith("/result")) {
+    return null;
+  }
+
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border-subtle bg-surface shadow-subtle safe-area-bottom"

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarClock, CheckCircle2, Loader2, Target } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, Loader2, Target, Play } from "lucide-react";
 import { PageContainer } from "@/components/navigation/page-container";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { ErrorState } from "@/components/shared/error-state";
@@ -428,11 +428,19 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
               <Target className="h-4 w-4 text-primary" aria-hidden="true" />
               <h2 className="type-h4">Practice Performance</h2>
             </div>
-            <Button asChild size="sm" variant="outline" className="min-h-[44px] font-semibold">
-              <Link href={`/app/practice?topicId=${encodeURIComponent(metadata.topicId)}`}>
-                Record Practice
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" className="min-h-[44px] font-semibold gap-1.5 shadow-sm">
+                <Link href={`/app/practice?topicId=${encodeURIComponent(metadata.topicId)}&mode=questions`}>
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                  Practice Questions
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="min-h-[44px] font-semibold">
+                <Link href={`/app/practice?topicId=${encodeURIComponent(metadata.topicId)}`}>
+                  Record Practice
+                </Link>
+              </Button>
+            </div>
           </div>
           {practiceAttemptsTotal > 0 || topicPracticeSessions.length > 0 ? (
             <dl className="mt-3.5 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-3">

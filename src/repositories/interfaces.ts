@@ -21,6 +21,13 @@ import type {
 import type { StudySessionCreateInput, TopicProgressUpsertInput } from "@/domain/study";
 import type { RevisionItemUpsertInput } from "@/domain/revision";
 import type { PracticeSessionCreateInput } from "@/domain/practice";
+import type {
+  QuestionWithOptions,
+  PracticeScope,
+  CreateQuestionSessionInput,
+  QuestionSessionWithAttempts,
+  QuestionSessionResult,
+} from "@/domain/practice-engine";
 
 export interface WorkspaceRepositoryInterface {
   getWorkspaceById(id: string): Promise<UserWorkspace | null>;
@@ -88,6 +95,38 @@ export interface PreferencesRepositoryInterface {
   saveNotificationPreferences(data: Partial<NewNotificationPreferences>): Promise<NotificationPreferences>;
 }
 
+export interface QuestionRepositoryInterface {
+  getQuestionById(id: string): Promise<QuestionWithOptions | null>;
+  getQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+    limit?: number;
+  }): Promise<QuestionWithOptions[]>;
+  countQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+  }): Promise<number>;
+  getAllQuestions(): Promise<QuestionWithOptions[]>;
+}
+
+export interface QuestionSessionRepositoryInterface {
+  createSession(data: CreateQuestionSessionInput): Promise<QuestionSessionWithAttempts>;
+  getSession(sessionId: string, workspaceId: string): Promise<QuestionSessionWithAttempts | null>;
+  recordAnswer(params: {
+    sessionId: string;
+    workspaceId: string;
+    questionId: string;
+    selectedOptionId: string | null;
+  }): Promise<void>;
+  submitSession(params: {
+    sessionId: string;
+    workspaceId: string;
+    durationSeconds?: number;
+    answers?: Record<string, string | null>;
+  }): Promise<QuestionSessionResult>;
+  getRecentQuestionSessions(workspaceId: string): Promise<QuestionSessionWithAttempts[]>;
+}
+
 export interface DomainRepositories {
   workspace: WorkspaceRepositoryInterface;
   progress: TopicProgressRepositoryInterface;
@@ -98,4 +137,6 @@ export interface DomainRepositories {
   resource: SavedResourceRepositoryInterface;
   mock: MockTestRepositoryInterface;
   preferences: PreferencesRepositoryInterface;
+  question: QuestionRepositoryInterface;
+  questionSession: QuestionSessionRepositoryInterface;
 }

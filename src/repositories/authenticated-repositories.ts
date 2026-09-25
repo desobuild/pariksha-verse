@@ -15,7 +15,16 @@ import type {
   SavedResourceRepositoryInterface,
   MockTestRepositoryInterface,
   PreferencesRepositoryInterface,
+  QuestionRepositoryInterface,
+  QuestionSessionRepositoryInterface,
 } from "./interfaces";
+import type {
+  QuestionWithOptions,
+  PracticeScope,
+  CreateQuestionSessionInput,
+  QuestionSessionWithAttempts,
+  QuestionSessionResult,
+} from "@/domain/practice-engine";
 import type {
   UserWorkspace,
   NewUserWorkspace,
@@ -402,6 +411,176 @@ export class AuthenticatedPreferencesRepository implements PreferencesRepository
   }
 }
 
+export class AuthenticatedQuestionRepository implements QuestionRepositoryInterface {
+  private reviveQuestion(q: QuestionWithOptions): QuestionWithOptions {
+    return {
+      ...q,
+      createdAt: new Date(q.createdAt),
+      updatedAt: new Date(q.updatedAt),
+    };
+  }
+
+  async getQuestionById(id: string): Promise<QuestionWithOptions | null> {
+    try {
+      const res = await fetch(`/api/questions/${encodeURIComponent(id)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as QuestionWithOptions;
+      return this.reviveQuestion(data);
+    } catch {
+      return null;
+    }
+  }
+
+  async getQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+    limit?: number;
+  }): Promise<QuestionWithOptions[]> {
+    try {
+      const scopeId =
+        params.scope.type === "topic"
+          ? params.scope.topicId
+          : params.scope.type === "subject"
+          ? params.scope.subjectId
+          : params.scope.examAttemptId;
+
+      const url = new URL("/api/questions", window.location.origin);
+      url.searchParams.set("scopeType", params.scope.type);
+      url.searchParams.set("scopeId", scopeId);
+      if (params.examId) url.searchParams.set("examId", params.examId);
+      if (params.limit) url.searchParams.set("limit", String(params.limit));
+
+      const res = await fetch(url.toString(), { credentials: "include" });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { questions?: QuestionWithOptions[] };
+      return (data.questions || []).map((q) => this.reviveQuestion(q));
+    } catch {
+      return [];
+    }
+  }
+
+  async countQuestionsForScope(params: {
+    examId?: string;
+    scope: PracticeScope;
+  }): Promise<number> {
+    const list = await this.getQuestionsForScope(params);
+    return list.length;
+  }
+
+  async getAllQuestions(): Promise<QuestionWithOptions[]> {
+    try {
+      const res = await fetch("/api/questions", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { questions?: QuestionWithOptions[] };
+      return (data.questions || []).map((q) => this.reviveQuestion(q));
+    } catch {
+      return [];
+    }
+  }
+}
+
+export class AuthenticatedQuestionSessionRepository implements QuestionSessionRepositoryInterface {
+  private reviveSession(s: QuestionSessionWithAttempts): QuestionSessionWithAttempts {
+    return {
+      ...s,
+      startedAt: new Date(s.startedAt),
+      completedAt: s.completedAt ? new Date(s.completedAt) : null,
+      questions: (s.questions || []).map((q) => ({
+        ...q,
+        createdAt: new Date(q.createdAt),
+        updatedAt: new Date(q.updatedAt),
+      })),
+      attempts: (s.attempts || []).map((a) => ({
+        ...a,
+        answeredAt: a.answeredAt ? new Date(a.answeredAt) : null,
+      })),
+    };
+  }
+
+  async createSession(data: CreateQuestionSessionInput): Promise<QuestionSessionWithAttempts> {
+    const res = await fetch("/api/practice/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to create practice session on server");
+    }
+    const session = (await res.json()) as QuestionSessionWithAttempts;
+    return this.reviveSession(session);
+  }
+
+  async getSession(sessionId: string, workspaceId: string): Promise<QuestionSessionWithAttempts | null> {
+    try {
+      const res = await fetch(
+        `/api/practice/session/${encodeURIComponent(sessionId)}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return null;
+      const session = (await res.json()) as QuestionSessionWithAttempts;
+      return this.reviveSession(session);
+    } catch {
+      return null;
+    }
+  }
+
+  async recordAnswer(params: {
+    sessionId: string;
+    workspaceId: string;
+    questionId: string;
+    selectedOptionId: string | null;
+  }): Promise<void> {
+    const res = await fetch(`/api/practice/session/${encodeURIComponent(params.sessionId)}/answer`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to record answer on server");
+    }
+  }
+
+  async submitSession(params: {
+    sessionId: string;
+    workspaceId: string;
+    durationSeconds?: number;
+    answers?: Record<string, string | null>;
+  }): Promise<QuestionSessionResult> {
+    const res = await fetch(`/api/practice/session/${encodeURIComponent(params.sessionId)}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to submit question session on server");
+    }
+    const result = (await res.json()) as QuestionSessionResult;
+    return {
+      ...result,
+      completedAt: new Date(result.completedAt),
+    };
+  }
+
+  async getRecentQuestionSessions(workspaceId: string): Promise<QuestionSessionWithAttempts[]> {
+    try {
+      const res = await fetch(
+        `/api/practice/session?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { sessions?: QuestionSessionWithAttempts[] };
+      return (data.sessions || []).map((s) => this.reviveSession(s));
+    } catch {
+      return [];
+    }
+  }
+}
+
 export function createAuthenticatedRepositories(): DomainRepositories {
   return {
     workspace: new AuthenticatedWorkspaceRepository(),
@@ -413,5 +592,7 @@ export function createAuthenticatedRepositories(): DomainRepositories {
     resource: new AuthenticatedSavedResourceRepository(),
     mock: new AuthenticatedMockTestRepository(),
     preferences: new AuthenticatedPreferencesRepository(),
+    question: new AuthenticatedQuestionRepository(),
+    questionSession: new AuthenticatedQuestionSessionRepository(),
   };
 }
