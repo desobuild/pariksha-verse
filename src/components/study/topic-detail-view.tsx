@@ -423,24 +423,33 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
 
         {/* Practice info — compact summary of existing data */}
         <Card variant="base" className="p-5">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-primary" aria-hidden="true" />
-            <h2 className="type-h4">Practice</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" aria-hidden="true" />
+              <h2 className="type-h4">Practice Performance</h2>
+            </div>
+            <Button asChild size="sm" variant="outline" className="min-h-[44px] font-semibold">
+              <Link href={`/app/practice?topicId=${encodeURIComponent(metadata.topicId)}`}>
+                Record Practice
+              </Link>
+            </Button>
           </div>
           {practiceAttemptsTotal > 0 || topicPracticeSessions.length > 0 ? (
-            <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
-              <TimelineRow label="Questions attempted" value={String(practiceAttemptsTotal)} />
+            <dl className="mt-3.5 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-3">
+              <TimelineRow label="Questions" value={String(practiceAttemptsTotal)} />
               <TimelineRow
                 label="Accuracy"
                 value={practiceAttemptsTotal > 0 ? formatAccuracy(progress?.accuracy ?? 0) : "—"}
               />
               <TimelineRow
                 label="Last practiced"
-                value={lastPracticedAt ? formatDate(lastPracticedAt) : "—"}
+                value={lastPracticedAt ? formatRelativeDay(lastPracticedAt) : "—"}
               />
             </dl>
           ) : (
-            <p className="mt-2 text-sm text-muted-foreground">No practice attempts yet.</p>
+            <div className="mt-3">
+              <p className="text-sm text-muted-foreground">No practice attempts yet.</p>
+            </div>
           )}
         </Card>
       </div>

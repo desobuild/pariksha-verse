@@ -13,6 +13,7 @@ import type {
 import type { DomainRepositories } from "@/repositories/interfaces";
 import { getExamAttempt, getExamForAttempt } from "./exam-catalog";
 import { formatStudyGoal, getPreparationStageLabel } from "./preparation";
+import { PRACTICE_WEAK_ACCURACY_BPS } from "./practice";
 
 const SEEDED_EXAM_DATASETS: SeedExamData[] = [neetSeedData];
 
@@ -88,6 +89,10 @@ export function calculateExamCountdown(
  */
 function topicStudyHref(topicId?: string): string {
   return topicId ? `/app/study/${topicId}` : "/app/study";
+}
+
+export function topicPracticeHref(topicId?: string): string {
+  return topicId ? `/app/practice?topicId=${encodeURIComponent(topicId)}` : "/app/practice";
 }
 
 export interface SubjectTaxonomyInfo {
@@ -310,9 +315,9 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
   }
 
   // 2. Weak topic requiring practice
-  // Derived from practice performance: practiceAttempts > 0 and accuracy < 6000 bps (< 60%)
+  // Derived from practice performance: practiceAttempts > 0 and accuracy < PRACTICE_WEAK_ACCURACY_BPS (< 60%)
   const weakTopics = context.progressList
-    .filter((p) => p.practiceAttempts > 0 && p.accuracy < 6000)
+    .filter((p) => p.practiceAttempts > 0 && p.accuracy < PRACTICE_WEAK_ACCURACY_BPS)
     .sort((a, b) => a.accuracy - b.accuracy);
 
   if (weakTopics.length > 0) {
@@ -329,7 +334,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
       subjectName: meta?.subjectName,
       reason: `Recent practice accuracy is ${accuracyPct}% (target: 60%+).`,
       ctaLabel: "Practice Topic",
-      ctaHref: topicStudyHref(weak.topicId),
+      ctaHref: topicPracticeHref(weak.topicId),
       metadata: { topicId: weak.topicId, accuracyPercent: accuracyPct },
     };
   }
@@ -358,7 +363,7 @@ export function getTodaysFocus(context: DashboardDataContext): TodaysFocusRecomm
           subjectName: meta?.subjectName,
           reason: `Recent practice accuracy is ${Math.round(accuracy)}% (target: 60%+).`,
           ctaLabel: "Practice Topic",
-          ctaHref: topicStudyHref(topicId),
+          ctaHref: topicPracticeHref(topicId),
           metadata: { topicId, accuracyPercent: Math.round(accuracy) },
         };
       }
@@ -615,7 +620,7 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
 
   // 3. Weak Practice Performance
   const weakTopics = context.progressList
-    .filter((p) => p.practiceAttempts > 0 && p.accuracy < 6000)
+    .filter((p) => p.practiceAttempts > 0 && p.accuracy < PRACTICE_WEAK_ACCURACY_BPS)
     .sort((a, b) => a.accuracy - b.accuracy);
 
   if (weakTopics.length > 0) {
@@ -630,7 +635,7 @@ export function generateAttentionItems(context: DashboardDataContext): Attention
       badgeLabel: `${accPct}% acc`,
       badgeVariant: "warning",
       actionLabel: "Practice",
-      actionHref: topicStudyHref(weak.topicId),
+      actionHref: topicPracticeHref(weak.topicId),
     });
   }
 

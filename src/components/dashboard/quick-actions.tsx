@@ -16,7 +16,7 @@ const ACTIONS = [
   {
     title: "Practice",
     description: "Question sets",
-    href: "/app/study",
+    href: "/app/practice",
     icon: Target,
   },
   {

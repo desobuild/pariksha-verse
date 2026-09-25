@@ -93,6 +93,12 @@ export function RevisionItemCard({ entry, prominent }: RevisionItemCardProps) {
               <span className="tabular-nums">Revision #{entry.revisionNumber}</span>
             </>
           )}
+          {entry.practiceAttempts !== undefined && entry.practiceAttempts > 0 && (
+            <>
+              {" · "}
+              <span>Last practice: {Math.round((entry.practiceAccuracy ?? 0) / 100)}% accuracy</span>
+            </>
+          )}
         </p>
         <Button asChild size="sm" className="min-h-[44px] gap-1.5 font-semibold">
           <Link href={`/app/study/${encodeURIComponent(entry.topicId)}`}>

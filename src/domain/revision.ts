@@ -170,6 +170,8 @@ export interface RevisionQueueEntry {
   dueInDays: number;
   lastRevisedAt: Date | null;
   lastStudiedAt: Date | null;
+  practiceAttempts?: number;
+  practiceAccuracy?: number;
 }
 
 export interface RecentlyRevisedEntry {
@@ -249,6 +251,8 @@ export function getRevisionQueue(input: RevisionQueueInput): RevisionQueue {
         dueInDays: Math.max(0, diffLocalDays(referenceDate, nextRevisionAt)),
         lastRevisedAt: toDate(item?.lastRevisedAt ?? progress?.lastRevisedAt ?? null),
         lastStudiedAt: toDate(progress?.lastStudiedAt ?? null),
+        practiceAttempts: progress?.practiceAttempts ?? 0,
+        practiceAccuracy: progress?.accuracy ?? 0,
       };
       if (bucket === "overdue") overdue.push(entry);
       else if (bucket === "due") dueToday.push(entry);

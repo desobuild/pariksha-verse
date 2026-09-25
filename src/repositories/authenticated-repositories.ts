@@ -3,6 +3,7 @@ import type {
   TopicProgressUpsertInput,
 } from "@/domain/study";
 import type { RevisionItemUpsertInput } from "@/domain/revision";
+import type { PracticeSessionCreateInput } from "@/domain/practice";
 import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
@@ -24,7 +25,6 @@ import type {
   StudySession,
   RevisionItem,
   PracticeSession,
-  NewPracticeSession,
   SavedResource,
   NewSavedResource,
   MockTest,
@@ -267,21 +267,40 @@ export class AuthenticatedRevisionRepository implements RevisionRepositoryInterf
 }
 
 export class AuthenticatedPracticeRepository implements PracticeRepositoryInterface {
-  async getPracticeSessions(): Promise<PracticeSession[]> { return []; }
-  async createPracticeSession(data: NewPracticeSession): Promise<PracticeSession> {
+  private revive(row: PracticeSession): PracticeSession {
     return {
-      id: data.id || "prac_temp",
-      workspaceId: data.workspaceId,
-      topicId: null,
-      questionCount: 0,
-      correct: 0,
-      incorrect: 0,
-      unattempted: 0,
-      durationMinutes: 0,
-      completedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...row,
+      completedAt: new Date(row.completedAt),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
     };
+  }
+
+  async getPracticeSessions(workspaceId: string): Promise<PracticeSession[]> {
+    try {
+      const res = await fetch(
+        `/api/practice?workspaceId=${encodeURIComponent(workspaceId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const data = (await res.json()) as { sessions?: PracticeSession[] };
+      return (data.sessions || []).map((s) => this.revive(s));
+    } catch {
+      return [];
+    }
+  }
+
+  async createPracticeSession(data: PracticeSessionCreateInput): Promise<PracticeSession> {
+    const res = await fetch("/api/practice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error("Failed to save practice session on server");
+    }
+    return this.revive((await res.json()) as PracticeSession);
   }
 }
 

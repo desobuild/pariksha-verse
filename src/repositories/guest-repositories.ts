@@ -5,6 +5,7 @@ import type {
   TopicProgressUpsertInput,
 } from "@/domain/study";
 import type { RevisionItemUpsertInput } from "@/domain/revision";
+import type { PracticeSessionCreateInput } from "@/domain/practice";
 import type {
   DomainRepositories,
   WorkspaceRepositoryInterface,
@@ -26,7 +27,6 @@ import type {
   StudySession,
   RevisionItem,
   PracticeSession,
-  NewPracticeSession,
   SavedResource,
   NewSavedResource,
   MockTest,
@@ -291,10 +291,17 @@ export class GuestPracticeRepository implements PracticeRepositoryInterface {
 
   async getPracticeSessions(workspaceId: string): Promise<PracticeSession[]> {
     const list = (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
-    return list.filter((p) => p.workspaceId === workspaceId);
+    return list
+      .filter((p) => p.workspaceId === workspaceId)
+      .map((p) => ({
+        ...p,
+        completedAt: p.completedAt instanceof Date ? p.completedAt : new Date(p.completedAt),
+        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
+        updatedAt: p.updatedAt instanceof Date ? p.updatedAt : new Date(p.updatedAt),
+      }));
   }
 
-  async createPracticeSession(data: NewPracticeSession): Promise<PracticeSession> {
+  async createPracticeSession(data: PracticeSessionCreateInput): Promise<PracticeSession> {
     const list = (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
     const record: PracticeSession = {
       id: data.id || `prac_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

@@ -9,3 +9,4 @@ export * from "./preparation";
 export * from "./dashboard";
 export * from "./study";
 export * from "./revision";
+export * from "./practice";

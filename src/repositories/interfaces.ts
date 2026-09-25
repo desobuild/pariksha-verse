@@ -7,7 +7,6 @@ import type {
   StudySession,
   RevisionItem,
   PracticeSession,
-  NewPracticeSession,
   SavedResource,
   NewSavedResource,
   MockTest,
@@ -21,6 +20,7 @@ import type {
 } from "@/db/schema";
 import type { StudySessionCreateInput, TopicProgressUpsertInput } from "@/domain/study";
 import type { RevisionItemUpsertInput } from "@/domain/revision";
+import type { PracticeSessionCreateInput } from "@/domain/practice";
 
 export interface WorkspaceRepositoryInterface {
   getWorkspaceById(id: string): Promise<UserWorkspace | null>;
@@ -65,7 +65,7 @@ export interface RevisionRepositoryInterface {
 
 export interface PracticeRepositoryInterface {
   getPracticeSessions(workspaceId: string): Promise<PracticeSession[]>;
-  createPracticeSession(data: NewPracticeSession): Promise<PracticeSession>;
+  createPracticeSession(data: PracticeSessionCreateInput): Promise<PracticeSession>;
 }
 
 export interface SavedResourceRepositoryInterface {
