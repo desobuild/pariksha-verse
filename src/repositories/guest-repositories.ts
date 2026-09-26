@@ -1,9 +1,6 @@
 import type { StorageAdapter } from "@/lib/storage/types";
 import { appStorage } from "@/lib/storage";
-import type {
-  StudySessionCreateInput,
-  TopicProgressUpsertInput,
-} from "@/domain/study";
+import type { StudySessionCreateInput, TopicProgressUpsertInput } from "@/domain/study";
 import type { RevisionItemUpsertInput } from "@/domain/revision";
 import type { PracticeSessionCreateInput } from "@/domain/practice";
 import type {
@@ -31,6 +28,8 @@ import {
   type QuestionSessionWithAttempts,
   type QuestionSessionResult,
 } from "@/domain/practice-engine";
+import { AUTHORED_QUESTIONS } from "@/data/questions/neet-authored";
+import { createAuthoredSampleMockForWorkspace } from "@/data/questions/neet-authored-mock";
 import { applyPracticeSessionToProgress } from "@/domain/practice";
 import { getTopicMetadata } from "@/domain/dashboard";
 import type {
@@ -82,7 +81,10 @@ export const GUEST_STORAGE_KEYS = {
 };
 
 export class GuestWorkspaceRepository implements WorkspaceRepositoryInterface {
-  constructor(private storage: StorageAdapter = appStorage, private guestId: string = "guest_default") {}
+  constructor(
+    private storage: StorageAdapter = appStorage,
+    private guestId: string = "guest_default"
+  ) {}
 
   async getWorkspaceById(id: string): Promise<UserWorkspace | null> {
     const list = (await this.storage.getItem<UserWorkspace[]>(GUEST_STORAGE_KEYS.WORKSPACES)) || [];
@@ -161,36 +163,73 @@ export class GuestTopicProgressRepository implements TopicProgressRepositoryInte
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getProgress(workspaceId: string, topicId: string): Promise<UserTopicProgress | null> {
-    const list = (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
+    const list =
+      (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
     return list.find((p) => p.workspaceId === workspaceId && p.topicId === topicId) || null;
   }
 
   async getAllProgressForWorkspace(workspaceId: string): Promise<UserTopicProgress[]> {
-    const list = (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
+    const list =
+      (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
     return list.filter((p) => p.workspaceId === workspaceId);
   }
 
   async upsertProgress(data: TopicProgressUpsertInput): Promise<UserTopicProgress> {
-    const list = (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
-    const index = list.findIndex((p) => p.workspaceId === data.workspaceId && p.topicId === data.topicId);
+    const list =
+      (await this.storage.getItem<UserTopicProgress[]>(GUEST_STORAGE_KEYS.TOPIC_PROGRESS)) || [];
+    const index = list.findIndex(
+      (p) => p.workspaceId === data.workspaceId && p.topicId === data.topicId
+    );
 
     const record: UserTopicProgress = {
       id: data.id || `prog_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: data.workspaceId,
       topicId: data.topicId,
       status: data.status ?? "not_started",
-      startedAt: data.startedAt ? (data.startedAt instanceof Date ? data.startedAt : new Date(data.startedAt)) : null,
-      learnedAt: data.learnedAt ? (data.learnedAt instanceof Date ? data.learnedAt : new Date(data.learnedAt)) : null,
-      practicedAt: data.practicedAt ? (data.practicedAt instanceof Date ? data.practicedAt : new Date(data.practicedAt)) : null,
-      revisedAt: data.revisedAt ? (data.revisedAt instanceof Date ? data.revisedAt : new Date(data.revisedAt)) : null,
-      masteredAt: data.masteredAt ? (data.masteredAt instanceof Date ? data.masteredAt : new Date(data.masteredAt)) : null,
+      startedAt: data.startedAt
+        ? data.startedAt instanceof Date
+          ? data.startedAt
+          : new Date(data.startedAt)
+        : null,
+      learnedAt: data.learnedAt
+        ? data.learnedAt instanceof Date
+          ? data.learnedAt
+          : new Date(data.learnedAt)
+        : null,
+      practicedAt: data.practicedAt
+        ? data.practicedAt instanceof Date
+          ? data.practicedAt
+          : new Date(data.practicedAt)
+        : null,
+      revisedAt: data.revisedAt
+        ? data.revisedAt instanceof Date
+          ? data.revisedAt
+          : new Date(data.revisedAt)
+        : null,
+      masteredAt: data.masteredAt
+        ? data.masteredAt instanceof Date
+          ? data.masteredAt
+          : new Date(data.masteredAt)
+        : null,
       practiceAttempts: data.practiceAttempts ?? 0,
       correctAnswers: data.correctAnswers ?? 0,
       incorrectAnswers: data.incorrectAnswers ?? 0,
       accuracy: data.accuracy ?? 0,
-      lastStudiedAt: data.lastStudiedAt ? (data.lastStudiedAt instanceof Date ? data.lastStudiedAt : new Date(data.lastStudiedAt)) : null,
-      lastRevisedAt: data.lastRevisedAt ? (data.lastRevisedAt instanceof Date ? data.lastRevisedAt : new Date(data.lastRevisedAt)) : null,
-      nextRevisionAt: data.nextRevisionAt ? (data.nextRevisionAt instanceof Date ? data.nextRevisionAt : new Date(data.nextRevisionAt)) : null,
+      lastStudiedAt: data.lastStudiedAt
+        ? data.lastStudiedAt instanceof Date
+          ? data.lastStudiedAt
+          : new Date(data.lastStudiedAt)
+        : null,
+      lastRevisedAt: data.lastRevisedAt
+        ? data.lastRevisedAt instanceof Date
+          ? data.lastRevisedAt
+          : new Date(data.lastRevisedAt)
+        : null,
+      nextRevisionAt: data.nextRevisionAt
+        ? data.nextRevisionAt instanceof Date
+          ? data.nextRevisionAt
+          : new Date(data.nextRevisionAt)
+        : null,
       notes: data.notes ?? null,
       createdAt: data.createdAt instanceof Date ? data.createdAt : new Date(),
       updatedAt: new Date(),
@@ -211,12 +250,14 @@ export class GuestPlannerRepository implements PlannerRepositoryInterface {
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getTasksForWorkspace(workspaceId: string): Promise<PlannerTask[]> {
-    const list = (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
+    const list =
+      (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
     return list.filter((t) => t.workspaceId === workspaceId);
   }
 
   async createTask(data: NewPlannerTask): Promise<PlannerTask> {
-    const list = (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
+    const list =
+      (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
     const record: PlannerTask = {
       id: data.id || `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: data.workspaceId,
@@ -238,7 +279,8 @@ export class GuestPlannerRepository implements PlannerRepositoryInterface {
   }
 
   async updateTaskStatus(taskId: string, status: PlannerTask["status"]): Promise<void> {
-    const list = (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
+    const list =
+      (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
     const task = list.find((t) => t.id === taskId);
     if (task) {
       task.status = status;
@@ -248,7 +290,8 @@ export class GuestPlannerRepository implements PlannerRepositoryInterface {
   }
 
   async deleteTask(taskId: string): Promise<void> {
-    const list = (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
+    const list =
+      (await this.storage.getItem<PlannerTask[]>(GUEST_STORAGE_KEYS.PLANNER_TASKS)) || [];
     const filtered = list.filter((t) => t.id !== taskId);
     await this.storage.setItem(GUEST_STORAGE_KEYS.PLANNER_TASKS, filtered);
   }
@@ -258,12 +301,14 @@ export class GuestStudySessionRepository implements StudySessionRepositoryInterf
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getSessionsForWorkspace(workspaceId: string): Promise<StudySession[]> {
-    const list = (await this.storage.getItem<StudySession[]>(GUEST_STORAGE_KEYS.STUDY_SESSIONS)) || [];
+    const list =
+      (await this.storage.getItem<StudySession[]>(GUEST_STORAGE_KEYS.STUDY_SESSIONS)) || [];
     return list.filter((s) => s.workspaceId === workspaceId);
   }
 
   async createSession(data: StudySessionCreateInput): Promise<StudySession> {
-    const list = (await this.storage.getItem<StudySession[]>(GUEST_STORAGE_KEYS.STUDY_SESSIONS)) || [];
+    const list =
+      (await this.storage.getItem<StudySession[]>(GUEST_STORAGE_KEYS.STUDY_SESSIONS)) || [];
     const record: StudySession = {
       id: data.id || `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: data.workspaceId,
@@ -272,7 +317,11 @@ export class GuestStudySessionRepository implements StudySessionRepositoryInterf
       durationMinutes: data.durationMinutes ?? 0,
       sessionType: data.sessionType ?? "focused",
       startedAt: data.startedAt instanceof Date ? data.startedAt : new Date(data.startedAt),
-      endedAt: data.endedAt ? (data.endedAt instanceof Date ? data.endedAt : new Date(data.endedAt)) : null,
+      endedAt: data.endedAt
+        ? data.endedAt instanceof Date
+          ? data.endedAt
+          : new Date(data.endedAt)
+        : null,
       createdAt: data.createdAt instanceof Date ? data.createdAt : new Date(),
       updatedAt: new Date(),
     };
@@ -286,20 +335,32 @@ export class GuestRevisionRepository implements RevisionRepositoryInterface {
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getRevisionItems(workspaceId: string): Promise<RevisionItem[]> {
-    const list = (await this.storage.getItem<RevisionItem[]>(GUEST_STORAGE_KEYS.REVISION_ITEMS)) || [];
+    const list =
+      (await this.storage.getItem<RevisionItem[]>(GUEST_STORAGE_KEYS.REVISION_ITEMS)) || [];
     return list.filter((r) => r.workspaceId === workspaceId);
   }
 
   async upsertRevisionItem(data: RevisionItemUpsertInput): Promise<RevisionItem> {
-    const list = (await this.storage.getItem<RevisionItem[]>(GUEST_STORAGE_KEYS.REVISION_ITEMS)) || [];
-    const index = list.findIndex((r) => r.workspaceId === data.workspaceId && r.topicId === data.topicId);
+    const list =
+      (await this.storage.getItem<RevisionItem[]>(GUEST_STORAGE_KEYS.REVISION_ITEMS)) || [];
+    const index = list.findIndex(
+      (r) => r.workspaceId === data.workspaceId && r.topicId === data.topicId
+    );
     const record: RevisionItem = {
       id: data.id || `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: data.workspaceId,
       topicId: data.topicId,
       revisionNumber: data.revisionNumber ?? 1,
-      nextRevisionAt: data.nextRevisionAt ? (data.nextRevisionAt instanceof Date ? data.nextRevisionAt : new Date(data.nextRevisionAt)) : null,
-      lastRevisedAt: data.lastRevisedAt ? (data.lastRevisedAt instanceof Date ? data.lastRevisedAt : new Date(data.lastRevisedAt)) : null,
+      nextRevisionAt: data.nextRevisionAt
+        ? data.nextRevisionAt instanceof Date
+          ? data.nextRevisionAt
+          : new Date(data.nextRevisionAt)
+        : null,
+      lastRevisedAt: data.lastRevisedAt
+        ? data.lastRevisedAt instanceof Date
+          ? data.lastRevisedAt
+          : new Date(data.lastRevisedAt)
+        : null,
       status: data.status ?? "scheduled",
       createdAt: data.createdAt instanceof Date ? data.createdAt : new Date(),
       updatedAt: new Date(),
@@ -318,7 +379,8 @@ export class GuestPracticeRepository implements PracticeRepositoryInterface {
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getPracticeSessions(workspaceId: string): Promise<PracticeSession[]> {
-    const list = (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
+    const list =
+      (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
     return list
       .filter((p) => p.workspaceId === workspaceId)
       .map((p) => ({
@@ -330,7 +392,8 @@ export class GuestPracticeRepository implements PracticeRepositoryInterface {
   }
 
   async createPracticeSession(data: PracticeSessionCreateInput): Promise<PracticeSession> {
-    const list = (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
+    const list =
+      (await this.storage.getItem<PracticeSession[]>(GUEST_STORAGE_KEYS.PRACTICE_SESSIONS)) || [];
     const record: PracticeSession = {
       id: data.id || `prac_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: data.workspaceId,
@@ -354,13 +417,17 @@ export class GuestSavedResourceRepository implements SavedResourceRepositoryInte
   constructor(private storage: StorageAdapter = appStorage) {}
 
   async getSavedResources(workspaceId: string): Promise<SavedResource[]> {
-    const list = (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
+    const list =
+      (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
     return list.filter((r) => r.workspaceId === workspaceId);
   }
 
   async saveResource(data: NewSavedResource): Promise<SavedResource> {
-    const list = (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
-    const existing = list.find((r) => r.workspaceId === data.workspaceId && r.resourceId === data.resourceId);
+    const list =
+      (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
+    const existing = list.find(
+      (r) => r.workspaceId === data.workspaceId && r.resourceId === data.resourceId
+    );
     if (existing) return existing;
 
     const record: SavedResource = {
@@ -377,8 +444,11 @@ export class GuestSavedResourceRepository implements SavedResourceRepositoryInte
   }
 
   async removeSavedResource(workspaceId: string, resourceId: string): Promise<void> {
-    const list = (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
-    const filtered = list.filter((r) => !(r.workspaceId === workspaceId && r.resourceId === resourceId));
+    const list =
+      (await this.storage.getItem<SavedResource[]>(GUEST_STORAGE_KEYS.SAVED_RESOURCES)) || [];
+    const filtered = list.filter(
+      (r) => !(r.workspaceId === workspaceId && r.resourceId === resourceId)
+    );
     await this.storage.setItem(GUEST_STORAGE_KEYS.SAVED_RESOURCES, filtered);
   }
 }
@@ -437,15 +507,25 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
   }
 
   async getMockTests(workspaceId: string): Promise<MockTestDetail[]> {
-    const list = (await this.storage.getItem<MockTestDetail[]>(GUEST_STORAGE_KEYS.MOCK_TESTS)) || [];
+    const list =
+      (await this.storage.getItem<MockTestDetail[]>(GUEST_STORAGE_KEYS.MOCK_TESTS)) || [];
     const forWorkspace = list.filter((m) => m.workspaceId === workspaceId);
+    const authoredSampleMock = createAuthoredSampleMockForWorkspace(workspaceId);
 
     if (forWorkspace.length > 0) {
+      // Ensure the authored sample mock exists even for workspaces that already
+      // hold fixture mocks; append it after them so ordering stays stable.
+      if (!forWorkspace.some((m) => m.id === authoredSampleMock.id)) {
+        list.push(authoredSampleMock);
+        await this.storage.setItem(GUEST_STORAGE_KEYS.MOCK_TESTS, list);
+        forWorkspace.push(authoredSampleMock);
+      }
       return forWorkspace.map((m) => this.reviveMockTest(m));
     }
 
-    // Seed fixture mocks for workspace if none exist
+    // Seed fixture mocks followed by the authored sample mock for workspace
     const seeded = createFixtureMocksForWorkspace(workspaceId);
+    seeded.push(authoredSampleMock);
     list.push(...seeded);
     await this.storage.setItem(GUEST_STORAGE_KEYS.MOCK_TESTS, list);
     return seeded.map((m) => this.reviveMockTest(m));
@@ -457,7 +537,8 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
   }
 
   async createMockTest(data: NewMockTest): Promise<MockTestDetail> {
-    const list = (await this.storage.getItem<MockTestDetail[]>(GUEST_STORAGE_KEYS.MOCK_TESTS)) || [];
+    const list =
+      (await this.storage.getItem<MockTestDetail[]>(GUEST_STORAGE_KEYS.MOCK_TESTS)) || [];
     const now = new Date();
 
     let markingScheme: MockMarkingScheme = {
@@ -489,7 +570,11 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
       title: data.title,
       description: data.description ?? null,
       type: data.type,
-      scheduledAt: data.scheduledAt ? (data.scheduledAt instanceof Date ? data.scheduledAt : new Date(data.scheduledAt)) : null,
+      scheduledAt: data.scheduledAt
+        ? data.scheduledAt instanceof Date
+          ? data.scheduledAt
+          : new Date(data.scheduledAt)
+        : null,
       durationMinutes: data.durationMinutes,
       totalQuestions: data.totalQuestions || 0,
       markingScheme,
@@ -520,11 +605,18 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
     }
 
     // Check existing active session
-    const sessions = (await this.storage.getItem<StoredGuestMockSession[]>(GUEST_STORAGE_KEYS.MOCK_TESTS + "_sessions")) ||
-      (await this.storage.getItem<StoredGuestMockSession[]>(GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredGuestMockSession[]>(
+        GUEST_STORAGE_KEYS.MOCK_TESTS + "_sessions"
+      )) ||
+      (await this.storage.getItem<StoredGuestMockSession[]>(
+        GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS
+      )) ||
+      [];
 
     const existing = sessions.find(
-      (s) => s.workspaceId === workspaceId && s.mockTestId === mockTestId && s.status === "in_progress"
+      (s) =>
+        s.workspaceId === workspaceId && s.mockTestId === mockTestId && s.status === "in_progress"
     );
 
     if (existing) {
@@ -583,7 +675,10 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
   }
 
   async getSession(sessionId: string, workspaceId: string): Promise<MockTestSessionDetail | null> {
-    const sessions = (await this.storage.getItem<StoredGuestMockSession[]>(GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredGuestMockSession[]>(
+        GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS
+      )) || [];
     const sess = sessions.find((s) => s.id === sessionId && s.workspaceId === workspaceId);
     if (!sess) return null;
 
@@ -635,8 +730,18 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
     isMarkedForReview?: boolean;
     currentIndex?: number;
   }): Promise<void> {
-    const { workspaceId, sessionId, questionId, selectedOptionId, isMarkedForReview, currentIndex } = params;
-    const sessions = (await this.storage.getItem<StoredGuestMockSession[]>(GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS)) || [];
+    const {
+      workspaceId,
+      sessionId,
+      questionId,
+      selectedOptionId,
+      isMarkedForReview,
+      currentIndex,
+    } = params;
+    const sessions =
+      (await this.storage.getItem<StoredGuestMockSession[]>(
+        GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS
+      )) || [];
     const sess = sessions.find((s) => s.id === sessionId && s.workspaceId === workspaceId);
     if (!sess || sess.status !== "in_progress") return;
 
@@ -691,7 +796,10 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
       completedAt = new Date(),
     } = params;
 
-    const sessions = (await this.storage.getItem<StoredGuestMockSession[]>(GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredGuestMockSession[]>(
+        GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS
+      )) || [];
     const sess = sessions.find((s) => s.id === sessionId && s.workspaceId === workspaceId);
     if (!sess) {
       throw new Error(`Mock test session ${sessionId} not found`);
@@ -739,7 +847,9 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
     await this.storage.setItem(GUEST_STORAGE_KEYS.MOCK_TEST_SESSIONS, sessions);
 
     // 2. Persist result
-    const results = (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) || [];
+    const results =
+      (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) ||
+      [];
     const existingIdx = results.findIndex((r) => r.sessionId === sessionId);
     if (existingIdx >= 0) {
       results[existingIdx] = result;
@@ -749,7 +859,10 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
     await this.storage.setItem(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS, results);
 
     // 3. Integrate with Phase 9 Practice Performance & Progress
-    const topicStatsMap = new Map<string, { attempted: number; correct: number; incorrect: number }>();
+    const topicStatsMap = new Map<
+      string,
+      { attempted: number; correct: number; incorrect: number }
+    >();
     for (const item of result.questions) {
       if (item.isAttempted) {
         const cur = topicStatsMap.get(item.topicId) || { attempted: 0, correct: 0, incorrect: 0 };
@@ -802,7 +915,10 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
   }
 
   async saveResult(data: NewMockTestResult): Promise<MockTestResult> {
-    const list = (await this.storage.getItem<MockTestResult[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS + "_legacy")) || [];
+    const list =
+      (await this.storage.getItem<MockTestResult[]>(
+        GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS + "_legacy"
+      )) || [];
     const record: MockTestResult = {
       id: data.id || `res_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       mockTestId: data.mockTestId,
@@ -828,19 +944,30 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
   }
 
   async getResult(mockTestId: string, workspaceId?: string): Promise<MockTestResultDetail | null> {
-    const list = (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) || [];
-    const match = list.find((r) => r.mockTestId === mockTestId && (!workspaceId || r.workspaceId === workspaceId));
+    const list =
+      (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) ||
+      [];
+    const match = list.find(
+      (r) => r.mockTestId === mockTestId && (!workspaceId || r.workspaceId === workspaceId)
+    );
     return match ? this.reviveResult(match) : null;
   }
 
-  async getResultBySessionId(sessionId: string, workspaceId: string): Promise<MockTestResultDetail | null> {
-    const list = (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) || [];
+  async getResultBySessionId(
+    sessionId: string,
+    workspaceId: string
+  ): Promise<MockTestResultDetail | null> {
+    const list =
+      (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) ||
+      [];
     const match = list.find((r) => r.sessionId === sessionId && r.workspaceId === workspaceId);
     return match ? this.reviveResult(match) : null;
   }
 
   async getAllResultsForWorkspace(workspaceId: string): Promise<MockTestResultDetail[]> {
-    const list = (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) || [];
+    const list =
+      (await this.storage.getItem<MockTestResultDetail[]>(GUEST_STORAGE_KEYS.MOCK_TEST_RESULTS)) ||
+      [];
     return list
       .filter((r) => r.workspaceId === workspaceId)
       .map((r) => this.reviveResult(r))
@@ -849,10 +976,15 @@ export class GuestMockTestRepository implements MockTestRepositoryInterface {
 }
 
 export class GuestPreferencesRepository implements PreferencesRepositoryInterface {
-  constructor(private storage: StorageAdapter = appStorage, private guestId: string = "guest_default") {}
+  constructor(
+    private storage: StorageAdapter = appStorage,
+    private guestId: string = "guest_default"
+  ) {}
 
   async getUserPreferences(): Promise<UserPreferences | null> {
-    return (await this.storage.getItem<UserPreferences>(GUEST_STORAGE_KEYS.USER_PREFERENCES)) || null;
+    return (
+      (await this.storage.getItem<UserPreferences>(GUEST_STORAGE_KEYS.USER_PREFERENCES)) || null
+    );
   }
 
   async saveUserPreferences(data: Partial<NewUserPreferences>): Promise<UserPreferences> {
@@ -871,10 +1003,16 @@ export class GuestPreferencesRepository implements PreferencesRepositoryInterfac
   }
 
   async getNotificationPreferences(): Promise<NotificationPreferences | null> {
-    return (await this.storage.getItem<NotificationPreferences>(GUEST_STORAGE_KEYS.NOTIFICATION_PREFERENCES)) || null;
+    return (
+      (await this.storage.getItem<NotificationPreferences>(
+        GUEST_STORAGE_KEYS.NOTIFICATION_PREFERENCES
+      )) || null
+    );
   }
 
-  async saveNotificationPreferences(data: Partial<NewNotificationPreferences>): Promise<NotificationPreferences> {
+  async saveNotificationPreferences(
+    data: Partial<NewNotificationPreferences>
+  ): Promise<NotificationPreferences> {
     const existing = await this.getNotificationPreferences();
     const record: NotificationPreferences = {
       userId: this.guestId,
@@ -890,8 +1028,16 @@ export class GuestPreferencesRepository implements PreferencesRepositoryInterfac
 }
 
 export class GuestQuestionRepository implements QuestionRepositoryInterface {
+  /**
+   * Guest-facing question pool: the production AUTHORED bank first, followed by
+   * the test-only engine fixtures (which remain available for development).
+   */
+  private get pool(): QuestionWithOptions[] {
+    return [...AUTHORED_QUESTIONS, ...FIXTURE_QUESTIONS];
+  }
+
   async getQuestionById(id: string): Promise<QuestionWithOptions | null> {
-    const found = FIXTURE_QUESTIONS.find((q) => q.id === id);
+    const found = this.pool.find((q) => q.id === id);
     return found ? { ...found } : null;
   }
 
@@ -900,23 +1046,20 @@ export class GuestQuestionRepository implements QuestionRepositoryInterface {
     scope: PracticeScope;
     limit?: number;
   }): Promise<QuestionWithOptions[]> {
-    const filtered = filterQuestionsByScope(FIXTURE_QUESTIONS, params.scope, params.examId);
+    const filtered = filterQuestionsByScope(this.pool, params.scope, params.examId);
     if (params.limit !== undefined && params.limit > 0) {
       return filtered.slice(0, params.limit);
     }
     return filtered;
   }
 
-  async countQuestionsForScope(params: {
-    examId?: string;
-    scope: PracticeScope;
-  }): Promise<number> {
-    const filtered = filterQuestionsByScope(FIXTURE_QUESTIONS, params.scope, params.examId);
+  async countQuestionsForScope(params: { examId?: string; scope: PracticeScope }): Promise<number> {
+    const filtered = filterQuestionsByScope(this.pool, params.scope, params.examId);
     return filtered.length;
   }
 
   async getAllQuestions(): Promise<QuestionWithOptions[]> {
-    return [...FIXTURE_QUESTIONS];
+    return this.pool;
   }
 }
 
@@ -970,8 +1113,8 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
       input.scope.type === "topic"
         ? input.scope.topicId
         : input.scope.type === "subject"
-        ? input.scope.subjectId
-        : input.scope.examAttemptId;
+          ? input.scope.subjectId
+          : input.scope.examAttemptId;
 
     const storedSession: StoredQuestionSession = {
       id: sessionId,
@@ -999,12 +1142,16 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
     }));
 
     // Save session
-    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) ||
+      [];
     sessions.push(storedSession);
     await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_SESSIONS, sessions);
 
     // Save attempts
-    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const attempts =
+      (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) ||
+      [];
     attempts.push(...storedAttempts);
     await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS, attempts);
 
@@ -1020,12 +1167,19 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
     };
   }
 
-  async getSession(sessionId: string, workspaceId: string): Promise<QuestionSessionWithAttempts | null> {
-    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+  async getSession(
+    sessionId: string,
+    workspaceId: string
+  ): Promise<QuestionSessionWithAttempts | null> {
+    const sessions =
+      (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) ||
+      [];
     const sess = sessions.find((s) => s.id === sessionId && s.workspaceId === workspaceId);
     if (!sess) return null;
 
-    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const attempts =
+      (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) ||
+      [];
     const sessionAttempts = attempts
       .filter((a) => a.sessionId === sessionId)
       .sort((a, b) => a.displayOrder - b.displayOrder);
@@ -1065,7 +1219,9 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
     questionId: string;
     selectedOptionId: string | null;
   }): Promise<void> {
-    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const attempts =
+      (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) ||
+      [];
     const target = attempts.find(
       (a) => a.sessionId === params.sessionId && a.questionId === params.questionId
     );
@@ -1115,9 +1271,13 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
     });
 
     // 1. Update stored attempts
-    const attempts = (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) || [];
+    const attempts =
+      (await this.storage.getItem<StoredQuestionAttempt[]>(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS)) ||
+      [];
     for (const item of result.questions) {
-      const match = attempts.find((a) => a.sessionId === session.id && a.questionId === item.questionId);
+      const match = attempts.find(
+        (a) => a.sessionId === session.id && a.questionId === item.questionId
+      );
       if (match) {
         match.selectedOptionId = item.selectedOptionId;
         match.isCorrect = item.isAttempted ? item.isCorrect : null;
@@ -1127,7 +1287,9 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
     await this.storage.setItem(GUEST_STORAGE_KEYS.QUESTION_ATTEMPTS, attempts);
 
     // 2. Mark session completed
-    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) ||
+      [];
     const sessMatch = sessions.find((s) => s.id === session.id);
     if (sessMatch) {
       sessMatch.status = "completed";
@@ -1195,7 +1357,9 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
   }
 
   async getRecentQuestionSessions(workspaceId: string): Promise<QuestionSessionWithAttempts[]> {
-    const sessions = (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) || [];
+    const sessions =
+      (await this.storage.getItem<StoredQuestionSession[]>(GUEST_STORAGE_KEYS.QUESTION_SESSIONS)) ||
+      [];
     const filtered = sessions
       .filter((s) => s.workspaceId === workspaceId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -1210,7 +1374,10 @@ export class GuestQuestionSessionRepository implements QuestionSessionRepository
   }
 }
 
-export function createGuestRepositories(storage: StorageAdapter = appStorage, guestId: string = "guest_default"): DomainRepositories {
+export function createGuestRepositories(
+  storage: StorageAdapter = appStorage,
+  guestId: string = "guest_default"
+): DomainRepositories {
   const workspace = new GuestWorkspaceRepository(storage, guestId);
   const progress = new GuestTopicProgressRepository(storage);
   const planner = new GuestPlannerRepository(storage);

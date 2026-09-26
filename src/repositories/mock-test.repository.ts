@@ -18,6 +18,7 @@ import {
   type MockSectionConfig,
 } from "@/domain/mock-engine";
 import { questionRepository } from "./question.repository";
+import { createAuthoredSampleMockForWorkspace } from "@/data/questions/neet-authored-mock";
 import { practiceRepository } from "./practice.repository";
 import { topicProgressRepository } from "./progress.repository";
 import { applyPracticeSessionToProgress } from "@/domain/practice";
@@ -130,13 +131,48 @@ export const mockTestRepository = {
   },
 
   /**
+   * Ensures the authored "Sample Practice Mock" exists for a workspace.
+   * Idempotent: a stable per-workspace ID plus ON CONFLICT DO NOTHING mean
+   * repeated calls never duplicate it. Fixture mocks stay first in the list.
+   */
+  async ensureAuthoredSampleMockSeeded(db: DatabaseInstance, workspaceId: string): Promise<void> {
+    const authored = createAuthoredSampleMockForWorkspace(workspaceId);
+    await db
+      .insert(mockTests)
+      .values({
+        id: authored.id,
+        workspaceId: authored.workspaceId,
+        examId: authored.examId ?? null,
+        title: authored.title,
+        description: authored.description,
+        type: authored.type,
+        scheduledAt: authored.scheduledAt ?? null,
+        durationMinutes: authored.durationMinutes,
+        totalQuestions: authored.totalQuestions,
+        markingScheme: JSON.stringify(authored.markingScheme),
+        sections: JSON.stringify(authored.sections),
+        questionSelectionConfig: authored.questionSelectionConfig
+          ? JSON.stringify(authored.questionSelectionConfig)
+          : null,
+        source: authored.source,
+        externalUrl: authored.externalUrl,
+        provenance: authored.provenance,
+        status: authored.status,
+        createdAt: authored.createdAt,
+        updatedAt: authored.updatedAt,
+      })
+      .onConflictDoNothing();
+  },
+
+  /**
    * Retrieves all mock tests for a workspace.
    */
-  async getMockTests(
-    db: DatabaseInstance,
-    workspaceId: string
-  ): Promise<MockTestDetail[]> {
-    return this.ensureFixtureMocksSeeded(db, workspaceId);
+  async getMockTests(db: DatabaseInstance, workspaceId: string): Promise<MockTestDetail[]> {
+    await this.ensureFixtureMocksSeeded(db, workspaceId);
+    await this.ensureAuthoredSampleMockSeeded(db, workspaceId);
+
+    const rows = await db.select().from(mockTests).where(eq(mockTests.workspaceId, workspaceId));
+    return rows.map((row) => this.mapToMockDetail(row));
   },
 
   /**
@@ -194,8 +230,9 @@ export const mockTestRepository = {
       }
     }
 
-    // Ensure fixture questions exist in bank
+    // Ensure fixture and authored bank questions exist
     await questionRepository.ensureFixtureQuestionsSeeded(db);
+    await questionRepository.ensureAuthoredQuestionsSeeded(db);
 
     const allQuestions = await questionRepository.getAllQuestions(db);
     const selectedQuestions = selectMockQuestions(allQuestions, mock, seed);
@@ -253,12 +290,7 @@ export const mockTestRepository = {
     const rows = await db
       .select()
       .from(mockTestSessions)
-      .where(
-        and(
-          eq(mockTestSessions.id, sessionId),
-          eq(mockTestSessions.workspaceId, workspaceId)
-        )
-      )
+      .where(and(eq(mockTestSessions.id, sessionId), eq(mockTestSessions.workspaceId, workspaceId)))
       .limit(1);
 
     if (!rows[0]) return null;
@@ -281,9 +313,7 @@ export const mockTestRepository = {
     }
 
     const questionIds: string[] = JSON.parse(sess.questionIds || "[]");
-    const selectedAnswers: Record<string, string | null> = JSON.parse(
-      sess.selectedAnswers || "{}"
-    );
+    const selectedAnswers: Record<string, string | null> = JSON.parse(sess.selectedAnswers || "{}");
     const markedForReview: string[] = JSON.parse(sess.markedForReview || "[]");
 
     const questions = [];
@@ -336,12 +366,7 @@ export const mockTestRepository = {
     const rows = await db
       .select()
       .from(mockTestSessions)
-      .where(
-        and(
-          eq(mockTestSessions.id, sessionId),
-          eq(mockTestSessions.workspaceId, workspaceId)
-        )
-      )
+      .where(and(eq(mockTestSessions.id, sessionId), eq(mockTestSessions.workspaceId, workspaceId)))
       .limit(1);
 
     if (!rows[0] || rows[0].status !== "in_progress") return;
@@ -358,9 +383,7 @@ export const mockTestRepository = {
       return;
     }
 
-    const selectedAnswers: Record<string, string | null> = JSON.parse(
-      sess.selectedAnswers || "{}"
-    );
+    const selectedAnswers: Record<string, string | null> = JSON.parse(sess.selectedAnswers || "{}");
     const markedForReview: string[] = JSON.parse(sess.markedForReview || "[]");
 
     if (selectedOptionId !== undefined) {
@@ -415,12 +438,7 @@ export const mockTestRepository = {
     const rows = await db
       .select()
       .from(mockTestSessions)
-      .where(
-        and(
-          eq(mockTestSessions.id, sessionId),
-          eq(mockTestSessions.workspaceId, workspaceId)
-        )
-      )
+      .where(and(eq(mockTestSessions.id, sessionId), eq(mockTestSessions.workspaceId, workspaceId)))
       .limit(1);
 
     if (!rows[0]) {
@@ -440,9 +458,7 @@ export const mockTestRepository = {
     }
 
     const questionIds: string[] = JSON.parse(sess.questionIds || "[]");
-    const storedAnswers: Record<string, string | null> = JSON.parse(
-      sess.selectedAnswers || "{}"
-    );
+    const storedAnswers: Record<string, string | null> = JSON.parse(sess.selectedAnswers || "{}");
     const storedMarked: string[] = JSON.parse(sess.markedForReview || "[]");
 
     const effectiveAnswers = { ...storedAnswers, ...(answers || {}) };
@@ -623,10 +639,7 @@ export const mockTestRepository = {
     const testIds = tests.map((t) => t.id);
     if (testIds.length === 0) return [];
 
-    const rows = await db
-      .select()
-      .from(mockTestResults)
-      .orderBy(desc(mockTestResults.completedAt));
+    const rows = await db.select().from(mockTestResults).orderBy(desc(mockTestResults.completedAt));
 
     const matching = rows.filter((r) => testIds.includes(r.mockTestId));
     const testMap = new Map(tests.map((t) => [t.id, t.title]));

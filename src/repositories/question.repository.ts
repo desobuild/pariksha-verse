@@ -19,6 +19,7 @@ import {
   type QuestionSessionResult,
   type QuestionAttemptDetail,
 } from "@/domain/practice-engine";
+import { AUTHORED_QUESTIONS } from "@/data/questions/neet-authored";
 import { practiceRepository } from "./practice.repository";
 import { topicProgressRepository } from "./progress.repository";
 import { applyPracticeSessionToProgress } from "@/domain/practice";
@@ -27,6 +28,13 @@ import { getTopicMetadata } from "@/domain/dashboard";
 /**
  * Server-side question bank and practice engine persistence (D1 via Drizzle).
  */
+
+/**
+ * Per-database memo so the authored bank is checked once per process/database
+ * instead of on every question query. WeakMap keeps test databases isolated.
+ */
+const authoredSeededDatabases = new WeakMap<object, boolean>();
+
 export const questionRepository = {
   /**
    * Ensures fixture questions are seeded into the database if questions table is empty.
@@ -36,7 +44,41 @@ export const questionRepository = {
     if (existing.length > 0) return;
 
     for (const q of FIXTURE_QUESTIONS) {
-      await db.insert(questions).values({
+      await this.insertQuestionWithOptions(db, q);
+    }
+  },
+
+  /**
+   * Ensures the canonical AUTHORED (production) question bank is present in the
+   * database. Idempotent: stable question/option IDs plus ON CONFLICT DO NOTHING
+   * mean repeated calls and repeated seeds never duplicate or corrupt records,
+   * and only genuinely missing questions are inserted.
+   */
+  async ensureAuthoredQuestionsSeeded(db: DatabaseInstance): Promise<void> {
+    if (authoredSeededDatabases.has(db)) return;
+
+    const existingAuthored = await db
+      .select({ id: questions.id })
+      .from(questions)
+      .where(eq(questions.provenance, "authored"));
+    const existingIds = new Set(existingAuthored.map((row) => row.id));
+
+    const missing = AUTHORED_QUESTIONS.filter((q) => !existingIds.has(q.id));
+    for (const q of missing) {
+      await this.insertQuestionWithOptions(db, q);
+    }
+
+    authoredSeededDatabases.set(db, true);
+  },
+
+  /**
+   * Inserts a single question with its normalized options. Stable IDs plus
+   * ON CONFLICT DO NOTHING make repeated inserts no-ops instead of errors.
+   */
+  async insertQuestionWithOptions(db: DatabaseInstance, q: QuestionWithOptions): Promise<void> {
+    await db
+      .insert(questions)
+      .values({
         id: q.id,
         examId: q.examId,
         subjectId: q.subjectId,
@@ -56,33 +98,29 @@ export const questionRepository = {
         status: q.status,
         createdAt: q.createdAt,
         updatedAt: q.updatedAt,
-      });
+      })
+      .onConflictDoNothing();
 
-      for (const opt of q.options) {
-        await db.insert(questionOptions).values({
+    for (const opt of q.options) {
+      await db
+        .insert(questionOptions)
+        .values({
           id: opt.id,
           questionId: opt.questionId,
           displayOrder: opt.displayOrder,
           optionKey: opt.optionKey,
           text: opt.text,
           isCorrect: Boolean(opt.isCorrect),
-        });
-      }
+        })
+        .onConflictDoNothing();
     }
   },
 
   /**
    * Fetches a question with its normalized options.
    */
-  async getQuestionById(
-    db: DatabaseInstance,
-    id: string
-  ): Promise<QuestionWithOptions | null> {
-    const qRows = await db
-      .select()
-      .from(questions)
-      .where(eq(questions.id, id))
-      .limit(1);
+  async getQuestionById(db: DatabaseInstance, id: string): Promise<QuestionWithOptions | null> {
+    const qRows = await db.select().from(questions).where(eq(questions.id, id)).limit(1);
 
     if (!qRows[0]) return null;
     const q = qRows[0];
@@ -113,11 +151,9 @@ export const questionRepository = {
    */
   async getAllQuestions(db: DatabaseInstance): Promise<QuestionWithOptions[]> {
     await this.ensureFixtureQuestionsSeeded(db);
+    await this.ensureAuthoredQuestionsSeeded(db);
 
-    const qRows = await db
-      .select()
-      .from(questions)
-      .where(eq(questions.status, "active"));
+    const qRows = await db.select().from(questions).where(eq(questions.status, "active"));
 
     if (qRows.length === 0) return [];
 
@@ -184,6 +220,7 @@ export const questionRepository = {
     input: CreateQuestionSessionInput
   ): Promise<QuestionSessionWithAttempts> {
     await this.ensureFixtureQuestionsSeeded(db);
+    await this.ensureAuthoredQuestionsSeeded(db);
 
     const all = await this.getAllQuestions(db);
     const eligible = filterQuestionsByScope(all, input.scope);
@@ -199,8 +236,8 @@ export const questionRepository = {
       input.scope.type === "topic"
         ? input.scope.topicId
         : input.scope.type === "subject"
-        ? input.scope.subjectId
-        : input.scope.examAttemptId;
+          ? input.scope.subjectId
+          : input.scope.examAttemptId;
 
     // 1. Insert session
     const [createdSession] = await db
@@ -291,10 +328,7 @@ export const questionRepository = {
     const questionIds = attRows.map((a) => a.questionId);
     let questionList: QuestionWithOptions[] = [];
     if (questionIds.length > 0) {
-      const qRows = await db
-        .select()
-        .from(questions)
-        .where(inArray(questions.id, questionIds));
+      const qRows = await db.select().from(questions).where(inArray(questions.id, questionIds));
 
       const optRows = await db
         .select()

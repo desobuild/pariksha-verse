@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { neetSeedData } from "./data/neet";
+import { AUTHORED_QUESTIONS } from "@/data/questions/neet-authored";
 
 function escapeSql(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
@@ -17,7 +18,7 @@ export function generateSeedSql(): string {
     "-- ParikshaVerse Deterministic NEET (UG) Seed SQL",
     "-- Baseline Source: NMC UGMEB Public Notice U.14023/19/2023-UGMEB (06.10.2023, NEET-UG 2024)",
     "-- Target Attempt: NEET 2027 (Provisional baseline pending official 2027 release)",
-    "-- Idempotent via SQLite INSERT INTO ... ON CONFLICT DO UPDATE",
+    "-- Idempotent via SQLite INSERT INTO ... ON CONFLICT DO UPDATE/DO NOTHING",
     "-- ==========================================================================",
     "",
   ];
@@ -72,6 +73,28 @@ export function generateSeedSql(): string {
             `name = excluded.name, display_order = excluded.display_order, updated_at = ${now};`
         );
       }
+    }
+  }
+
+  // 4. Authored (production) question bank — original ParikshaVerse content.
+  //    Stable IDs + ON CONFLICT DO NOTHING keep repeated seeds idempotent.
+  lines.push("", "-- --------------------------------------------------------------------------");
+  lines.push("-- Authored Question Bank (provenance = authored, original ParikshaVerse content)");
+  lines.push("-- --------------------------------------------------------------------------");
+
+  for (const q of AUTHORED_QUESTIONS) {
+    lines.push(
+      `INSERT INTO questions (id, exam_id, subject_id, chapter_id, topic_id, text, type, difficulty, explanation, source, source_url, attribution, license, external_id, year, provenance, status, created_at, updated_at) ` +
+        `VALUES (${escapeSql(q.id)}, ${escapeSql(q.examId)}, ${escapeSql(q.subjectId)}, ${escapeSql(q.chapterId)}, ${escapeSql(q.topicId)}, ${escapeSql(q.text)}, ${escapeSql(q.type)}, ${escapeSql(q.difficulty)}, ${escapeSql(q.explanation)}, ${escapeSql(q.source)}, ${escapeSql(q.sourceUrl)}, ${escapeSql(q.attribution)}, ${escapeSql(q.license)}, ${escapeSql(q.externalId)}, ${escapeSql(q.year)}, ${escapeSql(q.provenance)}, ${escapeSql(q.status)}, ${escapeSql(q.createdAt)}, ${escapeSql(q.updatedAt)}) ` +
+        `ON CONFLICT (id) DO NOTHING;`
+    );
+
+    for (const opt of q.options) {
+      lines.push(
+        `INSERT INTO question_options (id, question_id, display_order, option_key, text, is_correct) ` +
+          `VALUES (${escapeSql(opt.id)}, ${escapeSql(opt.questionId)}, ${opt.displayOrder}, ${escapeSql(opt.optionKey)}, ${escapeSql(opt.text)}, ${opt.isCorrect ? 1 : 0}) ` +
+          `ON CONFLICT (id) DO NOTHING;`
+      );
     }
   }
 
