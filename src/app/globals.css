@@ -68,6 +68,13 @@
 
     /* Restrained radius: 12px base */
     --radius: 0.75rem;
+
+    /*
+     * Mobile bottom navigation height (matches the h-16 bar in
+     * MobileBottomNav). Shared token so the nav and the scroll-inset
+     * spacer it renders can never drift apart.
+     */
+    --bottom-nav-height: 4rem;
   }
 
   .dark {
@@ -139,7 +146,11 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased min-h-screen selection:bg-primary/15 selection:text-primary;
+    @apply bg-background text-foreground antialiased selection:bg-primary/15 selection:text-primary;
+    /* Track the dynamic viewport: 100vh resolves against the largest mobile
+       viewport (URL bar hidden), leaving a phantom strip below the fold. */
+    min-height: 100vh;
+    min-height: 100dvh;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
@@ -167,6 +178,28 @@
 
   .safe-area-top {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /*
+   * Full-height surfaces that track the *dynamic* viewport. 100vh on mobile
+   * Chrome resolves against the largest viewport (URL bar hidden), so a
+   * 100vh page loads with its bottom edge (footers, CTAs) below the fold.
+   * The 100dvh declaration wins where supported; 100vh stays as fallback.
+   */
+  .min-h-dynamic {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}
+
+@layer components {
+  /*
+   * Scrollable space equal to the fixed mobile bottom nav (bar height plus
+   * safe-area inset). MobileBottomNav renders a spacer with this class after
+   * the page content so the final content always clears the nav.
+   */
+  .mobile-bottom-nav-inset {
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   }
 }
 

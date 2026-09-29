@@ -16,7 +16,9 @@ import type { ConsistencyAnalytics } from "@/domain/analytics";
 export function ConsistencySection({ consistency }: { consistency: ConsistencyAnalytics }) {
   const windowDays = consistency.windowDays;
   const periodText =
-    windowDays !== null ? `the last ${windowDays} days` : "the selected period (all time)";
+    windowDays !== null
+      ? `the last ${windowDays} ${windowDays === 1 ? "day" : "days"}`
+      : "the selected period (all time)";
 
   return (
     <section aria-labelledby="consistency-heading">
@@ -34,12 +36,14 @@ export function ConsistencySection({ consistency }: { consistency: ConsistencyAn
             <>
               Studied on{" "}
               <span className="font-semibold tabular-nums">{consistency.activeStudyDays}</span> of
-              the last <span className="tabular-nums">{windowDays}</span> days.
+              the last <span className="tabular-nums">{windowDays}</span>{" "}
+              {windowDays === 1 ? "day" : "days"}.
             </>
           ) : (
             <>
-              Studied on <span className="font-semibold tabular-nums">{consistency.activeStudyDays}</span>{" "}
-              days in total.
+              Studied on{" "}
+              <span className="font-semibold tabular-nums">{consistency.activeStudyDays}</span>{" "}
+              {consistency.activeStudyDays === 1 ? "day" : "days"} in total.
             </>
           )}
         </p>

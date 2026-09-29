@@ -11,7 +11,7 @@ import type {
   UserWorkspace,
 } from "@/db/schema";
 import type { DomainRepositories } from "@/repositories/interfaces";
-import type { MockTestDetail } from "./mock-engine/types";
+import type { MockTestDetail, MockTestResultDetail } from "./mock-engine/types";
 import { getExamAttempt, getExamForAttempt } from "./exam-catalog";
 import { formatStudyGoal, getPreparationStageLabel } from "./preparation";
 import { PRACTICE_WEAK_ACCURACY_BPS } from "./practice";
@@ -240,6 +240,8 @@ export interface DashboardDataContext {
   practiceSessions: PracticeSession[];
   studySessions: StudySession[];
   mockTests: (MockTest | MockTestDetail)[];
+  /** Completed mock attempts with results — the only mock-derived user activity. */
+  mockResults: MockTestResultDetail[];
   preferences: UserPreferences | null;
   referenceDate?: Date;
 }
@@ -732,7 +734,7 @@ export function compileRecentActivity(context: DashboardDataContext): RecentActi
       id: `act_practice_${p.id}`,
       type: "practice",
       title: meta ? `Practiced ${meta.topicName}` : "Practice completed",
-      subtitle: `${p.questionCount} questions · ${accPct}% accuracy`,
+      subtitle: `${p.questionCount} ${p.questionCount === 1 ? "question" : "questions"} · ${accPct}% accuracy`,
       timestamp: date,
       timeLabel: formatRelativeTime(date, refDate),
     });
@@ -753,19 +755,23 @@ export function compileRecentActivity(context: DashboardDataContext): RecentActi
     }
   }
 
-  // Mock test results
-  for (const m of context.mockTests) {
-    if (m.createdAt) {
-      const date = new Date(m.createdAt);
-      items.push({
-        id: `act_mock_${m.id}`,
-        type: "mock",
-        title: `Mock test: ${m.title}`,
-        subtitle: `${m.durationMinutes} min · ${m.type}`,
-        timestamp: date,
-        timeLabel: formatRelativeTime(date, refDate),
-      });
-    }
+  // Completed mock attempts. Available catalog/fixture mock definitions
+  // (context.mockTests) are not user activity — only results are, and each
+  // result is stamped with its own completion time, not the catalog createdAt.
+  const mockById = new Map(context.mockTests.map((m) => [m.id, m]));
+  for (const r of context.mockResults) {
+    const mock = mockById.get(r.mockTestId);
+    const date = new Date(r.completedAt);
+    items.push({
+      id: `act_mock_${r.id}`,
+      type: "mock",
+      title: `Mock test: ${r.mockTitle || mock?.title || "Mock Test"}`,
+      subtitle: mock
+        ? `${mock.durationMinutes} min · ${mock.type}`
+        : `Score ${r.rawScore}/${r.totalMarks} · ${r.accuracyPct}% accuracy`,
+      timestamp: date,
+      timeLabel: formatRelativeTime(date, refDate),
+    });
   }
 
   // Sort descending by timestamp, take top 6
@@ -811,6 +817,7 @@ export async function loadDashboardData(
     practiceSessions,
     studySessions,
     mockTests,
+    mockResults,
     preferences,
   ] = await Promise.all([
     repos.progress.getAllProgressForWorkspace(workspace.id).catch(() => []),
@@ -819,6 +826,7 @@ export async function loadDashboardData(
     repos.practice.getPracticeSessions(workspace.id).catch(() => []),
     repos.studySession.getSessionsForWorkspace(workspace.id).catch(() => []),
     repos.mock.getMockTests(workspace.id).catch(() => []),
+    repos.mock.getAllResultsForWorkspace(workspace.id).catch(() => []),
     repos.preferences.getUserPreferences().catch(() => null),
   ]);
 
@@ -830,6 +838,7 @@ export async function loadDashboardData(
     practiceSessions,
     studySessions,
     mockTests,
+    mockResults,
     preferences,
     referenceDate,
   };

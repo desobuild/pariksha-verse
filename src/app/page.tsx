@@ -8,13 +8,18 @@ import { BookOpen, LineChart, CalendarCheck } from "lucide-react";
 
 export default function RootPage() {
   return (
-    <main className="relative flex min-h-screen flex-col bg-background">
+    <main className="relative flex min-h-dynamic flex-col bg-background">
       <div className="absolute right-4 top-4 z-10">
         <ThemeToggle />
       </div>
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
-        <div className="space-y-10">
+      {/*
+        my-auto (instead of justify-center on the parent) centers the hero
+        when there is spare height but lets overflow scroll naturally —
+        flex centering would clip the top of tall content.
+      */}
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-6 py-12">
+        <div className="my-auto space-y-10">
           {/* Brand lockup */}
           <div className="flex items-center gap-3">
             <BrandMark size={56} />
@@ -71,7 +76,7 @@ export default function RootPage() {
         </div>
       </div>
 
-      <footer className="px-6 pb-6">
+      <footer className="px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
         <div className="mx-auto max-w-md text-center text-[11px] text-foreground-subtle">
           By continuing you agree to our{" "}
           <Link href={BRAND.links.terms} className="underline underline-offset-2 hover:text-foreground">

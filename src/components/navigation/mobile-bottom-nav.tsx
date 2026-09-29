@@ -15,20 +15,32 @@ const ICON_MAP: Record<string, LucideIcon> = {
   MoreHorizontal,
 };
 
+/**
+ * Routes where the mobile bottom nav (and its scroll inset) are hidden for
+ * focused practice/exam modes. Shared by the fixed nav and the scroll spacer
+ * below so the two can never disagree.
+ */
+export function shouldHideMobileBottomNav(pathname: string | null): boolean {
+  if (!pathname) return false;
+  // Hide during active question player sessions for distraction-free practice
+  if (pathname.includes("/app/practice/session/") && !pathname.endsWith("/result")) {
+    return true;
+  }
+  // Hide during active mock exam sessions (focused exam simulation mode)
+  if (
+    pathname.includes("/app/mock-tests/") &&
+    pathname.includes("/session/") &&
+    !pathname.endsWith("/result")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function MobileBottomNav() {
   const pathname = usePathname();
 
-  // Hide mobile bottom nav during active question player sessions for distraction-free practice
-  if (pathname?.includes("/app/practice/session/") && !pathname.endsWith("/result")) {
-    return null;
-  }
-
-  // Hide mobile bottom nav during active mock exam sessions (focused exam simulation mode)
-  if (
-    pathname?.includes("/app/mock-tests/") &&
-    pathname?.includes("/session/") &&
-    !pathname.endsWith("/result")
-  ) {
+  if (shouldHideMobileBottomNav(pathname)) {
     return null;
   }
 
@@ -37,7 +49,7 @@ export function MobileBottomNav() {
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border-subtle bg-surface shadow-subtle safe-area-bottom"
       aria-label="Mobile Bottom Navigation"
     >
-      <div className="flex h-16 items-center justify-around px-1">
+      <div className="flex h-[var(--bottom-nav-height)] items-center justify-around px-1">
         {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = ICON_MAP[item.icon] || Home;
           const isActive =
@@ -70,4 +82,22 @@ export function MobileBottomNav() {
       </div>
     </nav>
   );
+}
+
+/**
+ * In-flow spacer rendered at the END of the page content, INSIDE <main>
+ * (see AppShellLayout). It reserves exactly the fixed nav's height plus the
+ * safe-area inset of scrollable space so the final content can always scroll
+ * above the nav. Living inside the scrolling content — not alongside the
+ * fixed nav — is what guarantees it contributes to the scroll container's
+ * scrollHeight no matter which element that container is.
+ */
+export function MobileBottomNavSpacer() {
+  const pathname = usePathname();
+
+  if (shouldHideMobileBottomNav(pathname)) {
+    return null;
+  }
+
+  return <div aria-hidden="true" className="md:hidden mobile-bottom-nav-inset" />;
 }

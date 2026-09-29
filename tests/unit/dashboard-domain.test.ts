@@ -10,6 +10,7 @@ import {
   compileRecentActivity,
   type DashboardDataContext,
 } from "@/domain/dashboard";
+import type { MockTestResultDetail } from "@/domain/mock-engine";
 import type {
   UserWorkspace,
   UserTopicProgress,
@@ -39,6 +40,7 @@ function createBaseContext(referenceDate: Date = new Date("2026-10-01T10:00:00Z"
     practiceSessions: [],
     studySessions: [],
     mockTests: [],
+    mockResults: [],
     preferences: null,
     referenceDate,
   };
@@ -485,5 +487,189 @@ describe("Dashboard Domain — Attention Items & Activity", () => {
     expect(activities[0].timeLabel).toBe("Today");
     expect(activities[1].type).toBe("practice");
     expect(activities[1].timeLabel).toBe("Yesterday");
+  });
+});
+
+describe("Dashboard Domain — Recent Activity Mock Semantics", () => {
+  const refDate = new Date("2026-10-01T10:00:00Z");
+
+  function createCatalogMock(overrides: Partial<MockTest> = {}): MockTest {
+    return {
+      id: "mock_catalog_sample",
+      workspaceId: MOCK_WORKSPACE.id,
+      title: "Sample Practice Mock (ParikshaVerse Original)",
+      description: null,
+      type: "full_syllabus",
+      scheduledAt: null,
+      durationMinutes: 180,
+      totalQuestions: 180,
+      examId: "exam_neet",
+      markingScheme: null,
+      sections: null,
+      questionSelectionConfig: null,
+      status: "active",
+      provenance: "sample",
+      source: null,
+      externalUrl: null,
+      // Catalog creation is NOT user activity — bundled mocks ship with a
+      // fixed createdAt that must never surface as a completion timestamp.
+      createdAt: new Date("2026-09-28T00:00:00Z"),
+      updatedAt: new Date("2026-09-28T00:00:00Z"),
+      ...overrides,
+    };
+  }
+
+  function createMockResult(overrides: Partial<MockTestResultDetail> = {}): MockTestResultDetail {
+    return {
+      id: "res_sess_mock_1",
+      mockTestId: "mock_catalog_sample",
+      sessionId: "sess_mock_1",
+      workspaceId: MOCK_WORKSPACE.id,
+      mockTitle: "Sample Practice Mock (ParikshaVerse Original)",
+      rawScore: 660,
+      totalMarks: 720,
+      totalQuestions: 180,
+      attempted: 45,
+      correct: 40,
+      incorrect: 5,
+      unattempted: 135,
+      markedForReviewCount: 0,
+      accuracy: 8889,
+      accuracyPct: 89,
+      timeSpentSeconds: 3600,
+      submissionStatus: "completed",
+      completedAt: new Date("2026-09-30T09:00:00Z"),
+      notes: null,
+      sections: [],
+      questions: [],
+      ...overrides,
+    };
+  }
+
+  it("shows no mock activity for an empty workspace", () => {
+    const ctx = createBaseContext(refDate);
+    const activities = compileRecentActivity(ctx);
+    expect(activities).toEqual([]);
+  });
+
+  it("does not treat available mock catalog entries as activity", () => {
+    const ctx = createBaseContext(refDate);
+    ctx.mockTests = [
+      createCatalogMock(),
+      createCatalogMock({ id: "mock_catalog_fixture", title: "NEET Full Syllabus Fixture" }),
+    ];
+    ctx.mockResults = [];
+
+    const activities = compileRecentActivity(ctx);
+    expect(activities).toEqual([]);
+  });
+
+  it("creates activity from a completed mock result using the result timestamp", () => {
+    const ctx = createBaseContext(refDate);
+    ctx.mockTests = [createCatalogMock()];
+    ctx.mockResults = [createMockResult()];
+
+    const activities = compileRecentActivity(ctx);
+    expect(activities).toHaveLength(1);
+
+    const activity = activities[0];
+    expect(activity.type).toBe("mock");
+    expect(activity.id).toBe("act_mock_res_sess_mock_1");
+    expect(activity.title).toBe("Mock test: Sample Practice Mock (ParikshaVerse Original)");
+    // Subtitle keeps the existing design via the catalog definition
+    expect(activity.subtitle).toBe("180 min · full_syllabus");
+    // Timestamp is the user's completion time, not the catalog createdAt
+    expect(activity.timestamp.getTime()).toBe(new Date("2026-09-30T09:00:00Z").getTime());
+    expect(activity.timeLabel).toBe("Yesterday");
+  });
+
+  it("falls back to result data when the mock definition is unavailable", () => {
+    const ctx = createBaseContext(refDate);
+    ctx.mockTests = [];
+    ctx.mockResults = [createMockResult()];
+
+    const activities = compileRecentActivity(ctx);
+    expect(activities).toHaveLength(1);
+    expect(activities[0].subtitle).toBe("Score 660/720 · 89% accuracy");
+  });
+
+  it("orders multiple completed mocks by completion time, most recent first", () => {
+    const ctx = createBaseContext(refDate);
+    ctx.mockTests = [createCatalogMock()];
+    ctx.mockResults = [
+      createMockResult({
+        id: "res_older",
+        sessionId: "sess_older",
+        completedAt: new Date("2026-09-25T09:00:00Z"),
+      }),
+      createMockResult({
+        id: "res_newer",
+        sessionId: "sess_newer",
+        completedAt: new Date("2026-09-30T09:00:00Z"),
+      }),
+    ];
+
+    const activities = compileRecentActivity(ctx);
+    expect(activities).toHaveLength(2);
+    expect(activities[0].id).toBe("act_mock_res_newer");
+    expect(activities[1].id).toBe("act_mock_res_older");
+  });
+
+  it("leaves existing non-mock activity types unaffected", () => {
+    const ctx = createBaseContext(refDate);
+
+    ctx.studySessions = [
+      {
+        id: "s1",
+        workspaceId: MOCK_WORKSPACE.id,
+        plannerTaskId: null,
+        topicId: "exam_neet_physics_units_dimensions",
+        startedAt: new Date("2026-10-01T08:00:00Z"),
+        endedAt: new Date("2026-10-01T08:45:00Z"),
+        durationMinutes: 45,
+        sessionType: "focused",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+    ctx.practiceSessions = [
+      {
+        id: "p1",
+        workspaceId: MOCK_WORKSPACE.id,
+        topicId: null,
+        questionCount: 1,
+        correct: 1,
+        incorrect: 0,
+        unattempted: 0,
+        durationMinutes: 5,
+        completedAt: new Date("2026-09-30T15:00:00Z"),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+    ctx.plannerTasks = [
+      {
+        id: "t1",
+        workspaceId: MOCK_WORKSPACE.id,
+        type: "study",
+        title: "Kinematics drills",
+        subjectId: null,
+        chapterId: null,
+        topicId: null,
+        scheduledDate: "2026-09-29",
+        startTime: null,
+        durationMinutes: 30,
+        status: "completed",
+        createdAt: new Date(),
+        updatedAt: new Date("2026-09-29T18:00:00Z"),
+      },
+    ];
+    ctx.mockTests = [createCatalogMock()];
+    ctx.mockResults = [createMockResult()];
+
+    const activities = compileRecentActivity(ctx);
+    expect(activities.map((a) => a.type)).toEqual(["study", "practice", "mock", "planner"]);
+    // Singular question count in the practice subtitle
+    expect(activities[1].subtitle).toBe("1 question · 100% accuracy");
   });
 });

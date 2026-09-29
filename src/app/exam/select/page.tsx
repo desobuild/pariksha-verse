@@ -95,7 +95,7 @@ export default function ExamSelectPage() {
   const comingSoonExams = exams.filter((e) => !e.isSupported);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dynamic flex-col bg-background">
       <header className="flex h-16 shrink-0 items-center border-b border-border-subtle bg-surface px-4 sm:px-6">
         <Link
           href="/"
@@ -293,11 +293,16 @@ export default function ExamSelectPage() {
           </section>
         )}
 
-        {/* CTA */}
-        <div className="mt-auto pt-8">
+        {/*
+          Primary CTA. On mobile it sticks to the viewport bottom so Continue
+          is always discoverable while the exam list scrolls; it stays in
+          normal flow at the end of the page, so nothing is permanently
+          covered. Desktop keeps the original in-flow, transparent layout.
+        */}
+        <div className="sticky bottom-0 z-30 -mx-5 mt-auto border-t border-border-subtle bg-background px-5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-8">
           <Button
             size="lg"
-            className="w-full font-semibold"
+            className="w-full font-semibold shadow-card sm:shadow-none"
             disabled={!selectedExam || !selectedAttempt}
             onClick={() => {
               if (selectedAttempt) {
@@ -305,9 +310,13 @@ export default function ExamSelectPage() {
               }
             }}
           >
-            {selectedAttempt ? `Continue with ${selectedAttempt.label}` : "Select an exam to continue"}
+            {selectedAttempt
+              ? `Continue with ${selectedAttempt.label}`
+              : selectedExam
+                ? "Select your attempt to continue"
+                : "Select an exam to continue"}
           </Button>
-          <p className="mt-3 text-center text-xs text-foreground-subtle">
+          <p className="mt-2 text-center text-xs text-foreground-subtle sm:mt-3">
             Other exams launch as their verified syllabi are added.
           </p>
         </div>

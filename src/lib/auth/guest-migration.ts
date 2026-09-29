@@ -145,11 +145,22 @@ export async function migrateGuestData(
   try {
     const payload = await extractGuestData(storage);
 
-    // If guest has no local workspaces or progress, consider it complete
+    // If the guest has no local records at all, consider it complete. Check
+    // every collection: short-circuiting on a subset would silently strand
+    // data living only in the others (e.g. revision items or mock results)
+    // and mark the migration permanently done for this user.
     const hasData =
-      (payload.workspaces && payload.workspaces.length > 0) ||
-      (payload.topicProgress && payload.topicProgress.length > 0) ||
-      (payload.plannerTasks && payload.plannerTasks.length > 0);
+      (payload.workspaces?.length ?? 0) > 0 ||
+      (payload.topicProgress?.length ?? 0) > 0 ||
+      (payload.plannerTasks?.length ?? 0) > 0 ||
+      (payload.studySessions?.length ?? 0) > 0 ||
+      (payload.revisionItems?.length ?? 0) > 0 ||
+      (payload.practiceSessions?.length ?? 0) > 0 ||
+      (payload.savedResources?.length ?? 0) > 0 ||
+      (payload.mockTests?.length ?? 0) > 0 ||
+      (payload.mockTestResults?.length ?? 0) > 0 ||
+      payload.preferences !== undefined ||
+      payload.notificationPreferences !== undefined;
 
     if (!hasData) {
       await setGuestMigrationState(

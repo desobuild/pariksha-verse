@@ -47,7 +47,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} min-h-screen bg-background text-foreground font-sans antialiased`}>
+      <body className={`${inter.variable} min-h-dynamic bg-background text-foreground font-sans antialiased`}>
         <ThemeProvider>
           <AuthProvider>
             <RepositoryProvider>{children}</RepositoryProvider>

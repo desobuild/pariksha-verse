@@ -71,7 +71,9 @@ export function RecentPracticeList({ sessions, examAttemptId }: RecentPracticeLi
                     {topicTitle}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-1.5">
-                    <span>{sess.questionCount} questions</span>
+                    <span>
+                      {sess.questionCount} {sess.questionCount === 1 ? "question" : "questions"}
+                    </span>
                     <span>·</span>
                     <span>{sess.correct} correct</span>
                     <span>·</span>

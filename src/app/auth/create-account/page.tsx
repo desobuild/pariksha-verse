@@ -17,10 +17,11 @@ import { Input } from "@/components/ui/input";
 import { FormGroup, FormLabel, FormMessage } from "@/components/ui/form";
 import { BRAND } from "@/config/brand";
 import { useAuth } from "@/lib/auth/use-auth";
+import { StagingDemoPanel } from "@/components/auth/staging-demo-panel";
 
 export default function CreateAccountPage() {
   const router = useRouter();
-  const { createAccount, verify, continueAsGuest } = useAuth();
+  const { createAccount, verify, continueAsGuest, demoAuth, status } = useAuth();
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [step, setStep] = useState<"request" | "verify">("request");
@@ -37,22 +38,9 @@ export default function CreateAccountPage() {
     const res = await createAccount(email);
     setLoading(false);
 
-    if (res.success && res.token) {
-      // In dev/test: auto-verify immediately
-      setToken(res.token);
-      setSuccessMsg("Account created! Completing sign in...");
-      setLoading(true);
-      const vRes = await verify(email, res.token);
-      setLoading(false);
-      if (vRes.success) {
-        router.push("/app/home");
-      } else {
-        setStep("verify");
-        setError(vRes.error || "Verification failed");
-      }
-    } else if (res.success) {
+    if (res.success) {
       setStep("verify");
-      setSuccessMsg("Verification link sent! Enter your code to continue.");
+      setSuccessMsg("Verification link sent! Check your email and enter your code to continue.");
     } else {
       setError(res.error || "Failed to create account.");
     }
@@ -80,8 +68,8 @@ export default function CreateAccountPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center py-12">
-      <PageContainer size="narrow">
+    <div className="min-h-dynamic bg-background flex flex-col py-12">
+      <PageContainer size="narrow" className="my-auto">
         <div className="mb-6 text-center">
           <Link
             href="/"
@@ -95,96 +83,114 @@ export default function CreateAccountPage() {
           <p className="text-sm text-muted-foreground">{BRAND.tagline}</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Account</CardTitle>
-            <CardDescription>
-              Sync your preparation progress across all your devices
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {error && (
-              <FormMessage error className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                {error}
-              </FormMessage>
-            )}
-            {successMsg && (
-              <div className="p-3 text-xs rounded-lg bg-primary/10 text-primary border border-primary/20 font-medium">
-                {successMsg}
-              </div>
-            )}
+        {demoAuth.enabled ? (
+          // Staging demo authentication: no email requirements are shown.
+          <StagingDemoPanel />
+        ) : status === "loading" ? (
+          <Card>
+            <CardContent className="py-12 text-center text-sm text-muted-foreground">
+              Checking your session…
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Create Account</CardTitle>
+              <CardDescription>
+                Sync your preparation progress across all your devices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {error && (
+                <FormMessage
+                  error
+                  className="p-3 rounded-lg bg-destructive/10 border border-destructive/20"
+                >
+                  {error}
+                </FormMessage>
+              )}
+              {successMsg && (
+                <div className="p-3 text-xs rounded-lg bg-primary/10 text-primary border border-primary/20 font-medium">
+                  {successMsg}
+                </div>
+              )}
 
-            {step === "request" ? (
-              <form onSubmit={handleCreate} className="space-y-4">
-                <FormGroup>
-                  <FormLabel htmlFor="email" required>
-                    Email Address
-                  </FormLabel>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="student@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoFocus
-                    error={!!error}
-                  />
-                </FormGroup>
-                <Button type="submit" className="w-full" loading={loading}>
-                  Create Account with Email
-                </Button>
-              </form>
-            ) : (
-              <form onSubmit={handleManualVerify} className="space-y-4">
-                <FormGroup>
-                  <FormLabel htmlFor="token" required>
-                    Verification Code / Token
-                  </FormLabel>
-                  <Input
-                    id="token"
-                    type="text"
-                    placeholder="Paste verification token"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    required
-                    error={!!error}
-                  />
-                </FormGroup>
-                <Button type="submit" className="w-full" loading={loading}>
-                  Confirm & Sign In
-                </Button>
-              </form>
-            )}
+              {step === "request" ? (
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <FormGroup>
+                    <FormLabel htmlFor="email" required>
+                      Email Address
+                    </FormLabel>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="student@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoFocus
+                      error={!!error}
+                    />
+                  </FormGroup>
+                  <Button type="submit" className="w-full" loading={loading}>
+                    Create Account with Email
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleManualVerify} className="space-y-4">
+                  <FormGroup>
+                    <FormLabel htmlFor="token" required>
+                      Verification Code / Token
+                    </FormLabel>
+                    <Input
+                      id="token"
+                      type="text"
+                      placeholder="Paste verification token"
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      required
+                      error={!!error}
+                    />
+                  </FormGroup>
+                  <Button type="submit" className="w-full" loading={loading}>
+                    Confirm & Sign In
+                  </Button>
+                </form>
+              )}
 
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border" />
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">Or</span>
+                </div>
               </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or</span>
-              </div>
-            </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={handleContinueAsGuest}
-            >
-              Continue as Guest
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Privacy First: We collect only your email to sync your workspace. Zero advertisements, zero passwords stored.
-            </p>
-          </CardContent>
-          <CardFooter className="justify-center border-t border-border pt-4 text-xs text-muted-foreground">
-            <span>Already have an account? </span>
-            <Link href="/auth/sign-in" className="ml-1 text-primary hover:underline font-semibold">
-              Sign In
-            </Link>
-          </CardFooter>
-        </Card>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleContinueAsGuest}
+              >
+                Continue as Guest
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">
+                Privacy First: We collect only your email to sync your workspace. Zero
+                advertisements, zero passwords stored.
+              </p>
+            </CardContent>
+            <CardFooter className="justify-center border-t border-border pt-4 text-xs text-muted-foreground">
+              <span>Already have an account? </span>
+              <Link
+                href="/auth/sign-in"
+                className="ml-1 text-primary hover:underline font-semibold"
+              >
+                Sign In
+              </Link>
+            </CardFooter>
+          </Card>
+        )}
       </PageContainer>
     </div>
   );

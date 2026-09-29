@@ -276,17 +276,24 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
 
   const handleSessionCreated = (session: StudySession) => {
     setData((prev) => (prev ? { ...prev, sessions: [...prev.sessions, session] } : prev));
-    // Refresh lastStudiedAt without touching the preparation status.
+    // Refresh lastStudiedAt without touching the preparation status. The
+    // progress PUT is a full-record upsert, so the status must come from a
+    // fresh server read — the render snapshot can be stale and would
+    // otherwise overwrite a status another action has already advanced.
     if (workspace) {
-      void repos.progress
-        .upsertProgress(
-          applyStudySessionToProgress({
-            workspaceId: workspace.id,
-            topicId: metadata.topicId,
-            existing: progress,
-          })
-        )
-        .then((saved) => {
+      void (async () => {
+        try {
+          const fresh =
+            (await repos.progress
+              .getProgress(workspace.id, metadata.topicId)
+              .catch(() => null)) ?? progress;
+          const saved = await repos.progress.upsertProgress(
+            applyStudySessionToProgress({
+              workspaceId: workspace.id,
+              topicId: metadata.topicId,
+              existing: fresh,
+            })
+          );
           setData((prev) =>
             prev
               ? {
@@ -298,8 +305,10 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
                 }
               : prev
           );
-        })
-        .catch(() => undefined);
+        } catch {
+          // Keep prior behavior: lastStudiedAt refresh is best-effort.
+        }
+      })();
     }
   };
 
