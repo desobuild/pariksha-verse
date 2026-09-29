@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createAccountWithEmail, skipOnStaging } from "./support/auth";
 
 /**
  * Phase 5 — Exam Selection + Preparation Onboarding flows.
@@ -70,10 +71,17 @@ test.describe("Phase 5 Onboarding Flows", () => {
   });
 
   test("Flow 3: Authenticated setup — account onboarding creates a server workspace", async ({ page }) => {
+    // Validates server workspace creation for a brand-new workspace-less
+    // email account. Staging demo identities are provisioned with a workspace
+    // server-side (ensureStagingDemoWorkspace), so this workspace-less
+    // onboarding path has no staging equivalent; staging server workspace
+    // coverage lives in tests/e2e/staging/demo-auth.spec.ts.
+    skipOnStaging(
+      "Workspace-less email-account onboarding has no staging equivalent (demo profiles are pre-provisioned); staging workspace coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
+
     const email = `authsetup_${Date.now()}@parikshaverse.in`;
-    await page.goto("/auth/create-account");
-    await page.getByLabel(/email address/i).fill(email);
-    await page.getByRole("button", { name: /create account/i }).click();
+    await createAccountWithEmail(page, email);
 
     // No workspace yet -> preparation home routes into setup
     await expect(page).toHaveURL(/\/exam\/select/, { timeout: 15000 });
@@ -149,15 +157,20 @@ test.describe("Phase 5 Onboarding Flows", () => {
   });
 
   test("Flow 6: Guest migration — guest workspace becomes the account workspace without duplicates", async ({ page }) => {
+    // Validates guest→account workspace migration during email account
+    // creation. Staging runs the same migration contract against demo auth in
+    // tests/e2e/staging/guest-migration.spec.ts — no email attempt there.
+    skipOnStaging(
+      "Email-triggered guest migration; staging equivalent: tests/e2e/staging/guest-migration.spec.ts"
+    );
+
     const email = `migration_${Date.now()}@parikshaverse.in`;
 
     // Guest completes setup (local workspace + preferences)
     await completeGuestSetup(page, { goal: "1.5 hrs", stage: /practicing regularly/i });
 
     // Sign in: migration moves the guest workspace to the account
-    await page.goto("/auth/create-account");
-    await page.getByLabel(/email address/i).fill(email);
-    await page.getByRole("button", { name: /create account/i }).click();
+    await createAccountWithEmail(page, email);
 
     await expect(page).toHaveURL(/\/app\/home/, { timeout: 15000 });
     await expect(page.getByText(email)).toBeVisible();

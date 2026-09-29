@@ -1,4 +1,11 @@
 import { test, expect } from "@playwright/test";
+import {
+  createAccountWithEmail,
+  demoSignIn,
+  getAuthStrategy,
+  signInWithEmail,
+  skipOnStaging,
+} from "./support/auth";
 
 test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)", () => {
   test.describe.configure({ mode: "serial" });
@@ -22,14 +29,17 @@ test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)
   });
 
   test("Flow 2 & Flow 3: Create account -> onboarding -> authenticated session persists on refresh", async ({ page }) => {
-    await page.goto("/auth/create-account");
+    // Validates the real passwordless email account flow end to end (form ->
+    // magic-link token -> verify -> session). Staging intentionally has no
+    // email delivery and serves the demo panel instead; its authenticated
+    // session/persistence equivalent lives in tests/e2e/staging/demo-auth.spec.ts.
+    skipOnStaging(
+      "Email account creation is staging-incompatible by design (no email delivery); staging auth coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
 
-    // Enter email
-    await page.getByLabel(/email address/i).fill(testEmail);
-    await page.getByRole("button", { name: /create account/i }).click();
+    await createAccountWithEmail(page, testEmail);
 
-    // Verification automatically completes in test environment;
-    // home routes account users without a workspace into exam setup
+    // Home routes account users without a workspace into exam setup
     await expect(page).toHaveURL(/\/exam\/select/, { timeout: 15000 });
 
     // Complete onboarding to establish the authenticated workspace
@@ -52,16 +62,19 @@ test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)
   });
 
   test("Flow 4: Authenticated -> sign out -> guest state restored", async ({ page }) => {
-    // Navigate to app home while authenticated
-    await page.goto("/app/home");
+    if (getAuthStrategy() === "demo") {
+      // Staging: authenticate through the demo panel (no email flow there).
+      await demoSignIn(page, "Friend 2");
+    } else {
+      // Navigate to app home while authenticated
+      await page.goto("/app/home");
 
-    // Ensure user is authenticated first
-    const emailBadge = page.getByText(testEmail);
-    if (!(await emailBadge.isVisible())) {
-      await page.goto("/auth/sign-in");
-      await page.getByLabel(/email address/i).fill(testEmail);
-      await page.getByRole("button", { name: /sign in/i }).click();
-      await expect(page).toHaveURL(/\/app\/home/);
+      // Ensure user is authenticated first
+      const emailBadge = page.getByText(testEmail);
+      if (!(await emailBadge.isVisible())) {
+        await signInWithEmail(page, testEmail);
+        await expect(page).toHaveURL(/\/app\/home/, { timeout: 15000 });
+      }
     }
 
     // Click Sign Out
@@ -78,6 +91,13 @@ test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)
   });
 
   test("Flow 5: Guest -> create/sign into account -> guest migration executes cleanly", async ({ page }) => {
+    // Validates guest→account migration triggered by email account creation.
+    // Staging exercises the same migration contract against demo auth in
+    // tests/e2e/staging/guest-migration.spec.ts — no email attempt there.
+    skipOnStaging(
+      "Email-triggered guest migration; staging equivalent: tests/e2e/staging/guest-migration.spec.ts"
+    );
+
     const studentB = `aspirant_${Date.now()}@parikshaverse.in`;
 
     // 1. Enter as guest and populate sample guest data in IndexedDB
@@ -115,9 +135,7 @@ test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)
     });
 
     // 2. Sign in to account
-    await page.goto("/auth/create-account");
-    await page.getByLabel(/email address/i).fill(studentB);
-    await page.getByRole("button", { name: /create account/i }).click();
+    await createAccountWithEmail(page, studentB);
 
     // 3. Migration carries the guest workspace in; home keeps the user
     //    (no bounce to onboarding) and shows the migrated attempt

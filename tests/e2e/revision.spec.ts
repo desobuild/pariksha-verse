@@ -1,4 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
+import { createAccountWithEmail, demoSignIn, getAuthStrategy } from "./support/auth";
+import {
+  ensureTopicNotStarted,
+  CHAPTER_PHYSICS_AND_MEASUREMENT,
+  TOPIC_UNITS_LABEL,
+} from "./staging/helpers";
 
 test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
   async function completeGuestSetup(page: Page) {
@@ -311,8 +317,8 @@ test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
     await expect(page).toHaveURL(/\/app\/revision/);
   });
 
-  // Server-heavy authenticated flows run serially: both create accounts and
-  // write to the shared dev-server D1, and concurrent runs cause transient
+  // Server-heavy authenticated flows run serially: both authenticate and
+  // write server-backed state, and concurrent runs cause transient
   // workspace-resolution failures that redirect pages to onboarding.
   test.describe.serial("Authenticated revision API & persistence", () => {
     test("11. Revision API rejects unauthenticated and invalid requests", async ({ page }) => {
@@ -324,11 +330,15 @@ test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
       });
       expect(putRes.status()).toBe(401);
 
-      // Authenticated: nonexistent workspace -> 404, invalid payload -> 400
-      await page.goto("/auth/create-account");
-      await page.getByLabel(/email address/i).fill(`rev_api_${Date.now()}@parikshaverse.in`);
-      await page.getByRole("button", { name: /create account/i }).click();
-      await page.waitForURL(/\/exam\/select|\/app\/home/, { timeout: 15000 });
+      // Authenticate with the environment's strategy, then verify the
+      // authenticated error semantics: nonexistent workspace -> 404,
+      // invalid payload -> 400
+      if (getAuthStrategy() === "demo") {
+        // Staging: Friend 5's shared demo workspace (not used by other specs).
+        await demoSignIn(page, "Friend 5");
+      } else {
+        await createAccountWithEmail(page, `rev_api_${Date.now()}@parikshaverse.in`);
+      }
 
       const missing = await page.request.get("/api/revision?workspaceId=ws_missing");
       expect(missing.status()).toBe(404);
@@ -342,22 +352,28 @@ test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
     test("12. Authenticated revision persists on the server", async ({ page }) => {
       test.setTimeout(150_000);
       const email = `rev_persist_${Date.now()}@parikshaverse.in`;
-      await page.goto("/auth/create-account");
-      await page.getByLabel(/email address/i).fill(email);
-      await page.getByRole("button", { name: /create account/i }).click();
-      await page.waitForURL(/\/exam\/select/, { timeout: 15000 });
 
-      // Onboard an authenticated workspace
-      await page.getByRole("radio", { name: /neet/i }).click();
-      await page.getByRole("button", { name: /continue with neet 2027/i }).click();
-      await page.getByRole("radio", { name: "1 hr" }).click();
-      await page.getByRole("radio", { name: /just starting/i }).click();
-      await page.getByRole("button", { name: /create my preparation space/i }).click();
-      await page.waitForURL(/\/app\/home/, { timeout: 15000 });
+      if (getAuthStrategy() === "demo") {
+        // Staging: Friend 5's shared demo profile is sticky across runs, so
+        // the probe topic is reset first to start the schedule clean.
+        await demoSignIn(page, "Friend 5");
+        await ensureTopicNotStarted(page, CHAPTER_PHYSICS_AND_MEASUREMENT, TOPIC_UNITS_LABEL);
+      } else {
+        await createAccountWithEmail(page, email);
+        await page.waitForURL(/\/exam\/select/, { timeout: 15000 });
 
-      // Confirm the authenticated workspace is fully resolved (also warms
-      // the compiled API routes) before deeper navigation.
-      await expect(page.getByText(email).first()).toBeVisible({ timeout: 20000 });
+        // Onboard an authenticated workspace
+        await page.getByRole("radio", { name: /neet/i }).click();
+        await page.getByRole("button", { name: /continue with neet 2027/i }).click();
+        await page.getByRole("radio", { name: "1 hr" }).click();
+        await page.getByRole("radio", { name: /just starting/i }).click();
+        await page.getByRole("button", { name: /create my preparation space/i }).click();
+        await page.waitForURL(/\/app\/home/, { timeout: 15000 });
+
+        // Confirm the authenticated workspace is fully resolved (also warms
+        // the compiled API routes) before deeper navigation.
+        await expect(page.getByText(email).first()).toBeVisible({ timeout: 20000 });
+      }
 
       // Mark a topic learned through the UI -> first revision scheduled via D1
       await page.goto("/app/study");

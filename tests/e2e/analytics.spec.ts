@@ -1,4 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
+import { createAccountWithEmail, demoSignIn, getAuthStrategy } from "./support/auth";
+import {
+  ensureTopicNotStarted,
+  CHAPTER_PHYSICS_AND_MEASUREMENT,
+  TOPIC_UNITS_LABEL,
+} from "./staging/helpers";
 
 /**
  * Phase 12 E2E — the analytics journey on the Progress screen.
@@ -430,18 +436,25 @@ test.describe("Phase 12 Analytics & Exam Readiness E2E", () => {
     test("7. Authenticated progress reflects D1-backed data", async ({ page }) => {
       test.setTimeout(150_000);
       const email = `analytics_${Date.now()}@parikshaverse.in`;
-      await page.goto("/auth/create-account");
-      await page.getByLabel(/email address/i).fill(email);
-      await page.getByRole("button", { name: /create account/i }).click();
-      await page.waitForURL(/\/exam\/select/, { timeout: 15000 });
 
-      await page.getByRole("radio", { name: /neet/i }).click();
-      await page.getByRole("button", { name: /continue with neet 2027/i }).click();
-      await page.getByRole("radio", { name: "1 hr" }).click();
-      await page.getByRole("radio", { name: /just starting/i }).click();
-      await page.getByRole("button", { name: /create my preparation space/i }).click();
-      await page.waitForURL(/\/app\/home/, { timeout: 15000 });
-      await expect(page.getByText(email).first()).toBeVisible({ timeout: 20000 });
+      if (getAuthStrategy() === "demo") {
+        // Staging: authenticate through the demo panel. Friend 4 is not used
+        // by any other spec; its shared profile is sticky across runs, so the
+        // probe topic is reset first to keep the coverage assertions exact.
+        await demoSignIn(page, "Friend 4");
+        await ensureTopicNotStarted(page, CHAPTER_PHYSICS_AND_MEASUREMENT, TOPIC_UNITS_LABEL);
+      } else {
+        await createAccountWithEmail(page, email);
+        await page.waitForURL(/\/exam\/select/, { timeout: 15000 });
+
+        await page.getByRole("radio", { name: /neet/i }).click();
+        await page.getByRole("button", { name: /continue with neet 2027/i }).click();
+        await page.getByRole("radio", { name: "1 hr" }).click();
+        await page.getByRole("radio", { name: /just starting/i }).click();
+        await page.getByRole("button", { name: /create my preparation space/i }).click();
+        await page.waitForURL(/\/app\/home/, { timeout: 15000 });
+        await expect(page.getByText(email).first()).toBeVisible({ timeout: 20000 });
+      }
 
       // Record real progress through the Study UI.
       await page.goto("/app/study");

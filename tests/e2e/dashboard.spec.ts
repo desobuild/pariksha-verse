@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createAccountWithEmail, demoSignIn, getAuthStrategy } from "./support/auth";
 
 test.describe("Phase 6 Real Preparation Dashboard E2E", () => {
   async function completeGuestSetup(
@@ -131,21 +132,30 @@ test.describe("Phase 6 Real Preparation Dashboard E2E", () => {
 
   test("5. Authenticated user can view dashboard with personal data", async ({ page }) => {
     const email = `dashboard_auth_${Date.now()}@parikshaverse.in`;
-    await page.goto("/auth/create-account");
-    await page.getByLabel(/email address/i).fill(email);
-    await page.getByRole("button", { name: /create account/i }).click();
 
-    await expect(page).toHaveURL(/\/exam\/select/, { timeout: 15000 });
-    await page.getByRole("radio", { name: /neet/i }).click();
-    await page.getByRole("button", { name: /continue with neet 2027/i }).click();
-    await page.getByRole("radio", { name: "2 hrs" }).click();
-    await page.getByRole("radio", { name: /practicing regularly/i }).click();
-    await page.getByRole("button", { name: /create my preparation space/i }).click();
+    if (getAuthStrategy() === "demo") {
+      // Staging: shared demo profile (Friend 4 is untouched by other specs);
+      // its workspace comes pre-provisioned, so only the dashboard-render
+      // assertions below apply.
+      await demoSignIn(page, "Friend 4");
+    } else {
+      await createAccountWithEmail(page, email);
+      await expect(page).toHaveURL(/\/exam\/select/, { timeout: 15000 });
+      await page.getByRole("radio", { name: /neet/i }).click();
+      await page.getByRole("button", { name: /continue with neet 2027/i }).click();
+      await page.getByRole("radio", { name: "2 hrs" }).click();
+      await page.getByRole("radio", { name: /practicing regularly/i }).click();
+      await page.getByRole("button", { name: /create my preparation space/i }).click();
+    }
 
     await expect(page).toHaveURL(/\/app\/home/, { timeout: 15000 });
     await expect(page.getByText("NEET 2027").first()).toBeVisible();
-    await expect(page.getByText("2 hrs").first()).toBeVisible();
-    await expect(page.getByText("Practicing regularly").first()).toBeVisible();
+    if (getAuthStrategy() === "email") {
+      // Personalization values are unique to the email onboarding above; the
+      // shared demo profile carries its own server-side preferences.
+      await expect(page.getByText("2 hrs").first()).toBeVisible();
+      await expect(page.getByText("Practicing regularly").first()).toBeVisible();
+    }
   });
 
   test("6. No horizontal overflow across multiple responsive viewports", async ({ page }) => {
