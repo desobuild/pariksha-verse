@@ -4,6 +4,8 @@ import { createMagicLinkToken } from "@/lib/auth/crypto-session";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { sendMagicLinkEmail } from "@/lib/email/email-service";
+import { getCloudflareEnv } from "@/lib/cloudflare/env";
 
 const signInSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -20,14 +22,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const { email } = result.data;
+    const email = result.data.email.toLowerCase();
     const db = getDb();
 
     // Check if user exists
     const rows = await db
       .select()
       .from(users)
-      .where(eq(users.email, email.toLowerCase()))
+      .where(eq(users.email, email))
       .limit(1);
 
     if (!rows[0]) {
@@ -37,15 +39,46 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate magic-link / verification token
-    const token = await createMagicLinkToken(email.toLowerCase());
+    // Determine environment bindings and configuration
+    const cfEnv = getCloudflareEnv();
+    const env = (cfEnv.ENVIRONMENT || process.env.ENVIRONMENT || process.env.NODE_ENV || "development").toLowerCase();
+    const isStagingOrProd = env === "production" || env === "staging";
+    const allowTestAuthMock =
+      !isStagingOrProd &&
+      (process.env.ENABLE_TEST_AUTH_MOCK === "true" || cfEnv.ENABLE_TEST_AUTH_MOCK === "true");
 
-    // In dev/test/preview environments, return the token directly for seamless testing
-    return NextResponse.json({
+    // Generate magic-link / verification token
+    const token = await createMagicLinkToken(email);
+
+    // Build verification URL
+    const url = new URL(request.url);
+    const appUrl = cfEnv.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
+    const verificationUrl = `${appUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+
+    // Deliver token through transactional email provider
+    const emailResult = await sendMagicLinkEmail({
+      email,
+      verificationUrl,
+      token,
+    });
+
+    if (!emailResult.success) {
+      return NextResponse.json(
+        { error: "Failed to send verification email. Please try again later." },
+        { status: 500 }
+      );
+    }
+
+    const responseBody: Record<string, unknown> = {
       success: true,
       message: "Verification code sent to your email.",
-      token, // Available for development, preview, and test automation
-    });
+    };
+
+    if (allowTestAuthMock) {
+      responseBody._testToken = token;
+    }
+
+    return NextResponse.json(responseBody);
   } catch {
     return NextResponse.json(
       { error: "Failed to process sign in request." },

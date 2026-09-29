@@ -158,11 +158,7 @@ export const questionRepository = {
     if (qRows.length === 0) return [];
 
     const questionIds = qRows.map((q) => q.id);
-    const optRows = await db
-      .select()
-      .from(questionOptions)
-      .where(inArray(questionOptions.questionId, questionIds))
-      .orderBy(asc(questionOptions.displayOrder));
+    const optRows = await this.getOptionsForQuestionIds(db, questionIds);
 
     const optionsByQ = new Map<string, QuestionOption[]>();
     for (const opt of optRows) {
@@ -184,6 +180,33 @@ export const questionRepository = {
       createdAt: new Date(q.createdAt),
       updatedAt: new Date(q.updatedAt),
     }));
+  },
+
+  /**
+   * Fetches options for the given question ids.
+   *
+   * D1 caps bound host parameters per statement (SQLITE_MAX_VARIABLE_NUMBER),
+   * so unbounded `IN (...)` lists over the whole question bank must be
+   * batched. Batches stay well under the limit regardless of bank size; the
+   * ordering promise is kept by sorting each batch and concatenating in order
+   * of the input ids.
+   */
+  async getOptionsForQuestionIds(
+    db: DatabaseInstance,
+    questionIds: string[]
+  ): Promise<Array<typeof questionOptions.$inferSelect>> {
+    const OPTION_BATCH_SIZE = 80;
+    const all: Array<typeof questionOptions.$inferSelect> = [];
+    for (let i = 0; i < questionIds.length; i += OPTION_BATCH_SIZE) {
+      const batch = questionIds.slice(i, i + OPTION_BATCH_SIZE);
+      const rows = await db
+        .select()
+        .from(questionOptions)
+        .where(inArray(questionOptions.questionId, batch))
+        .orderBy(asc(questionOptions.displayOrder));
+      all.push(...rows);
+    }
+    return all;
   },
 
   /**

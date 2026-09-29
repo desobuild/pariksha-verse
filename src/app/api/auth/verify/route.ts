@@ -52,8 +52,7 @@ export async function POST(request: Request) {
 
     // Generate authenticated session token
     const sessionToken = await createSessionToken(user.id, user.email);
-    const isProd = process.env.NODE_ENV === "production";
-    const cookieHeader = createSessionCookie(sessionToken, isProd);
+    const cookieHeader = createSessionCookie(sessionToken, request);
 
     const response = NextResponse.json({
       success: true,

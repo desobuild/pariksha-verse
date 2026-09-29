@@ -592,8 +592,20 @@ export const mockTestRepository = {
     if (!rows[0]) return null;
     const r = rows[0];
 
+    // Authoritative workspace isolation: verify session belongs to requested workspace
+    const sessionRows = await db
+      .select()
+      .from(mockTestSessions)
+      .where(and(eq(mockTestSessions.id, sessionId), eq(mockTestSessions.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (!sessionRows[0]) return null;
+
+    // Authoritative workspace isolation: verify mock test belongs to requested workspace
     const mock = await this.getMockTestById(db, r.mockTestId, workspaceId);
-    const mockTitle = mock?.title || "Mock Test";
+    if (!mock) return null;
+
+    const mockTitle = mock.title;
 
     const sections = r.sectionResults ? JSON.parse(r.sectionResults) : [];
     const questions = r.questionResults ? JSON.parse(r.questionResults) : [];

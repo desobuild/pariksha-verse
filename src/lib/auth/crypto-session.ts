@@ -18,7 +18,73 @@ export interface VerificationTokenPayload {
   iat: number;
 }
 
-const DEFAULT_SECRET = "pariksha_verse_dev_secret_key_change_in_production_32b";
+import { getCloudflareEnv } from "@/lib/cloudflare/env";
+
+export const KNOWN_INSECURE_DEV_SECRET =
+  "pariksha_verse_dev_secret_key_change_in_production_32b";
+
+/**
+ * Resolves the SESSION_SECRET from Cloudflare bindings or process.env.
+ * Ensures the hardcoded fallback secret is rejected in staging/production,
+ * and fails safely if missing in staging/production.
+ */
+export function getSessionSecret(customSecret?: string): string {
+  if (customSecret && customSecret.trim().length > 0) {
+    return customSecret;
+  }
+
+  const isServerOrTest =
+    typeof window === "undefined" ||
+    !!process.env.VITEST ||
+    process.env.NODE_ENV === "test";
+  const cfEnv = isServerOrTest ? getCloudflareEnv() : {};
+  const secret =
+    cfEnv.SESSION_SECRET ||
+    (typeof process !== "undefined" ? process.env?.SESSION_SECRET : undefined);
+
+  const env = (
+    cfEnv.ENVIRONMENT ||
+    (typeof process !== "undefined" ? process.env?.ENVIRONMENT || process.env?.NODE_ENV : undefined) ||
+    "development"
+  ).toLowerCase();
+
+  const isStagingOrProduction =
+    env === "production" ||
+    env === "staging" ||
+    (typeof process !== "undefined" &&
+      (process.env?.ENVIRONMENT === "production" ||
+        process.env?.ENVIRONMENT === "staging" ||
+        process.env?.VERCEL_ENV === "production" ||
+        process.env?.CF_PAGES === "1"));
+
+  if (isStagingOrProduction) {
+    if (!secret || secret.trim() === "") {
+      throw new Error(
+        "SESSION_SECRET is missing. A secure session secret is required in staging and production."
+      );
+    }
+    if (secret === KNOWN_INSECURE_DEV_SECRET) {
+      throw new Error(
+        "SESSION_SECRET cannot be the default development secret in staging or production."
+      );
+    }
+    if (secret.length < 32) {
+      throw new Error(
+        "SESSION_SECRET must be at least 32 characters long."
+      );
+    }
+    return secret;
+  }
+
+  // Development and test modes:
+  if (secret && secret.trim().length > 0) {
+    return secret;
+  }
+
+  throw new Error(
+    "SESSION_SECRET environment variable is missing. Set SESSION_SECRET in your .env.local for local development."
+  );
+}
 
 function getCryptoSubtle(): SubtleCrypto {
   if (typeof globalThis.crypto !== "undefined" && globalThis.crypto.subtle) {
@@ -55,7 +121,7 @@ function base64UrlDecode(str: string): Uint8Array {
 async function getHmacKey(secret: string): Promise<CryptoKey> {
   const subtle = getCryptoSubtle();
   const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret || DEFAULT_SECRET);
+  const keyData = encoder.encode(secret);
   return subtle.importKey(
     "raw",
     keyData,
@@ -68,14 +134,15 @@ async function getHmacKey(secret: string): Promise<CryptoKey> {
 /**
  * Creates an HMAC-SHA256 signed compact token: `payloadBase64.signatureBase64`.
  */
-export async function signToken<T extends object>(payload: T, secret: string = DEFAULT_SECRET): Promise<string> {
+export async function signToken<T extends object>(payload: T, secret?: string): Promise<string> {
+  const effectiveSecret = getSessionSecret(secret);
   const subtle = getCryptoSubtle();
   const encoder = new TextEncoder();
   const payloadJson = JSON.stringify(payload);
   const payloadBytes = encoder.encode(payloadJson);
   const payloadB64 = base64UrlEncode(payloadBytes);
 
-  const key = await getHmacKey(secret);
+  const key = await getHmacKey(effectiveSecret);
   const signatureBuffer = await subtle.sign("HMAC", key, encoder.encode(payloadB64));
   const signatureB64 = base64UrlEncode(signatureBuffer);
 
@@ -84,21 +151,23 @@ export async function signToken<T extends object>(payload: T, secret: string = D
 
 /**
  * Verifies an HMAC-SHA256 signed compact token.
- * Returns null if the signature is invalid, payload is malformed, or token is expired.
+ * Returns null if the signature is invalid, payload is malformed, token is expired,
+ * or the secret is missing/invalid.
  */
 export async function verifyToken<T extends { exp?: number }>(
   token: string,
-  secret: string = DEFAULT_SECRET
+  secret?: string
 ): Promise<T | null> {
   try {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
 
+    const effectiveSecret = getSessionSecret(secret);
     const [payloadB64, signatureB64] = parts;
     const subtle = getCryptoSubtle();
     const encoder = new TextEncoder();
 
-    const key = await getHmacKey(secret);
+    const key = await getHmacKey(effectiveSecret);
     const signatureBytes = base64UrlDecode(signatureB64);
     const dataBytes = encoder.encode(payloadB64);
 

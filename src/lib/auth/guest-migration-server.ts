@@ -147,6 +147,10 @@ export async function executeServerMigration(
           accuracy,
           lastStudiedAt: maxLastStudied,
           lastRevisedAt: maxLastRevised,
+          // Carry the guest's spaced-review schedule into rows that don't
+          // have one yet — without this, a merged row loses the revision
+          // schedule the queue derives from progress.nextRevisionAt.
+          nextRevisionAt: existing.nextRevisionAt ?? (gp.nextRevisionAt ? new Date(gp.nextRevisionAt) : null),
           notes,
           updatedAt: new Date(),
         })

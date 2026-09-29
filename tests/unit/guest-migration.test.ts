@@ -16,6 +16,7 @@ import {
   resources,
   mockTests,
   mockTestResults,
+  revisionItems,
 } from "@/db/schema";
 import { executeServerMigration } from "@/lib/auth/guest-migration-server";
 import type { GuestMigrationPayload } from "@/lib/auth/auth-types";
@@ -357,5 +358,209 @@ describe("Guest → Account Migration & Conflict Resolution", () => {
 
     const allResults = await db.select().from(mockTestResults).where(eq(mockTestResults.mockTestId, allMocks[0].id));
     expect(allResults).toHaveLength(1);
+  });
+
+  it("preserves the guest revision schedule (nextRevisionAt) on fresh rows", async () => {
+    const scheduledFor = new Date("2026-10-05T00:00:00Z");
+    const payload: GuestMigrationPayload = {
+      guestId: "guest_revision_schedule",
+      workspaces: [
+        {
+          id: "guest_ws_rev",
+          examAttemptId: "attempt_neet_2027",
+          isActive: true,
+          startedAt: new Date("2026-01-01"),
+        },
+      ],
+      topicProgress: [
+        {
+          workspaceId: "guest_ws_rev",
+          topicId: "top_mendel",
+          status: "learned",
+          nextRevisionAt: scheduledFor,
+        },
+      ],
+      revisionItems: [
+        {
+          workspaceId: "guest_ws_rev",
+          topicId: "top_mendel",
+          revisionNumber: 1,
+          nextRevisionAt: scheduledFor,
+          status: "scheduled",
+        },
+      ],
+    };
+
+    const summary = await executeServerMigration(db, userId, payload);
+    expect(summary.topicProgressMigrated).toBe(1);
+    expect(summary.revisionItemsMigrated).toBe(1);
+
+    const workspaces = await db
+      .select()
+      .from(userWorkspaces)
+      .where(eq(userWorkspaces.userId, userId));
+    const wsId = workspaces[0].id;
+
+    const progress = await db
+      .select()
+      .from(userTopicProgress)
+      .where(eq(userTopicProgress.workspaceId, wsId));
+    expect(progress).toHaveLength(1);
+    expect(progress[0].nextRevisionAt?.getTime()).toBe(scheduledFor.getTime());
+
+    const revisions = await db
+      .select()
+      .from(revisionItems)
+      .where(eq(revisionItems.workspaceId, wsId));
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].status).toBe("scheduled");
+    expect(revisions[0].nextRevisionAt?.getTime()).toBe(scheduledFor.getTime());
+  });
+
+  it("merge never clobbers the account's nextRevisionAt but fills it when missing", async () => {
+    const existingWsId = "ws_existing_rev";
+    const accountSchedule = new Date("2026-01-05T00:00:00Z");
+    const guestSchedule = new Date("2026-01-20T00:00:00Z");
+
+    // Account row already holds its own revision schedule
+    await db.insert(userWorkspaces).values({
+      id: existingWsId,
+      userId,
+      examAttemptId: "attempt_neet_2027",
+      isActive: true,
+      startedAt: new Date("2025-12-01"),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(userTopicProgress).values({
+      id: "prog_auth_sched",
+      workspaceId: existingWsId,
+      topicId: "top_mendel",
+      status: "practiced",
+      practiceAttempts: 10,
+      correctAnswers: 7,
+      incorrectAnswers: 3,
+      accuracy: 7000,
+      nextRevisionAt: accountSchedule,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const summary = await executeServerMigration(db, userId, {
+      guestId: "guest_merge_sched",
+      workspaces: [
+        {
+          id: "guest_ws_sched",
+          examAttemptId: "attempt_neet_2027",
+          isActive: true,
+        },
+      ],
+      topicProgress: [
+        {
+          workspaceId: "guest_ws_sched",
+          topicId: "top_mendel",
+          status: "learned",
+          nextRevisionAt: guestSchedule,
+        },
+      ],
+    });
+    expect(summary.workspacesMigrated).toBe(0);
+
+    const merged = await db
+      .select()
+      .from(userTopicProgress)
+      .where(eq(userTopicProgress.id, "prog_auth_sched"));
+    expect(merged).toHaveLength(1);
+    // The account's existing schedule wins; the guest's does not overwrite it
+    expect(merged[0].nextRevisionAt?.getTime()).toBe(accountSchedule.getTime());
+
+    // A second topic whose account row has NO schedule yet must inherit the
+    // guest's nextRevisionAt instead of losing it.
+    await db.insert(topics).values({
+      id: "top_respiration",
+      chapterId: "chap_genetics",
+      name: "Respiration in Plants",
+      slug: "respiration-in-plants",
+      displayOrder: 2,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(userTopicProgress).values({
+      id: "prog_auth_unscheduled",
+      workspaceId: existingWsId,
+      topicId: "top_respiration",
+      status: "learning",
+      nextRevisionAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await executeServerMigration(db, userId, {
+      guestId: "guest_merge_sched_2",
+      workspaces: [
+        {
+          id: "guest_ws_sched_2",
+          examAttemptId: "attempt_neet_2027",
+          isActive: true,
+        },
+      ],
+      topicProgress: [
+        {
+          workspaceId: "guest_ws_sched_2",
+          topicId: "top_respiration",
+          status: "learned",
+          nextRevisionAt: guestSchedule,
+        },
+      ],
+    });
+
+    const filled = await db
+      .select()
+      .from(userTopicProgress)
+      .where(eq(userTopicProgress.id, "prog_auth_unscheduled"));
+    expect(filled).toHaveLength(1);
+    expect(filled[0].nextRevisionAt?.getTime()).toBe(guestSchedule.getTime());
+  });
+
+  it("is idempotent for revision items: re-running never duplicates the schedule", async () => {
+    const scheduledFor = new Date("2026-10-05T00:00:00Z");
+    const payload: GuestMigrationPayload = {
+      guestId: "guest_rev_idempotent",
+      workspaces: [
+        {
+          id: "guest_ws_rev_idem",
+          examAttemptId: "attempt_neet_2027",
+          isActive: true,
+        },
+      ],
+      revisionItems: [
+        {
+          workspaceId: "guest_ws_rev_idem",
+          topicId: "top_mendel",
+          revisionNumber: 1,
+          nextRevisionAt: scheduledFor,
+          status: "scheduled",
+        },
+      ],
+    };
+
+    const first = await executeServerMigration(db, userId, payload);
+    expect(first.revisionItemsMigrated).toBe(1);
+
+    const second = await executeServerMigration(db, userId, payload);
+    expect(second.revisionItemsMigrated).toBe(0);
+
+    const workspaces = await db
+      .select()
+      .from(userWorkspaces)
+      .where(eq(userWorkspaces.userId, userId));
+    const wsId = workspaces[0].id;
+
+    const revisions = await db
+      .select()
+      .from(revisionItems)
+      .where(eq(revisionItems.workspaceId, wsId));
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].nextRevisionAt?.getTime()).toBe(scheduledFor.getTime());
   });
 });

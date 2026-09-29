@@ -16,13 +16,12 @@ export function getDb(d1Binding?: D1Database): DatabaseInstance {
     return drizzle(d1Binding, { schema });
   }
 
-  if (cachedDb) {
-    return cachedDb;
-  }
-
   const env = getCloudflareEnv();
   if (env.DB) {
-    cachedDb = drizzle(env.DB, { schema });
+    return drizzle(env.DB, { schema });
+  }
+
+  if (cachedDb) {
     return cachedDb;
   }
 
