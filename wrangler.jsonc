@@ -2,19 +2,73 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pariksha-verse",
   "compatibility_date": "2025-02-14",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  // Required so @cloudflare/vite-plugin builds/deploy this project as a Worker
+  // (vinext's router-agnostic fetch handler) instead of an assets-only Worker.
+  // Must stay a bare package specifier: @cloudflare/vite-plugin resolves it
+  // through Vite (vinext/server/fetch-handler -> virtual:vinext-worker-entry).
+  "main": "vinext/server/fetch-handler",
+  // `directory` is re-written by @cloudflare/vite-plugin to the client build
+  // output in the generated dist/client/wrangler.json; the ASSETS binding backs
+  // vinext's optional in-worker static asset fallback.
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "pariksha-verse-db",
+      "database_name": "pariksha-verse-db-local",
       "database_id": "pariksha-verse-db-local",
       "migrations_dir": "src/db/migrations"
-    },
+    }
   ],
   "vars": {
     "ENVIRONMENT": "development",
+    "ENABLE_TEST_AUTH_MOCK": "false",
+    "NEXT_PUBLIC_APP_URL": "http://localhost:3000",
+    "EMAIL_FROM": "ParikshaVerse Dev <auth@parikshaverse.in>"
   },
   "observability": {
-    "enabled": true,
+    "enabled": true
   },
+  "env": {
+    "staging": {
+      "name": "pariksha-verse-staging",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pariksha-verse-db-staging",
+          "database_id": "bbe9b6c9-1c52-4b67-b513-c51b2b99a505",
+          "migrations_dir": "src/db/migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "ENABLE_TEST_AUTH_MOCK": "false",
+        "NEXT_PUBLIC_APP_URL": "https://staging.parikshaverse.in",
+        "EMAIL_FROM": "ParikshaVerse Staging <auth@staging.parikshaverse.in>"
+      }
+    },
+    "production": {
+      "name": "pariksha-verse-production",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pariksha-verse-db-production",
+          "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID",
+          "migrations_dir": "src/db/migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "ENABLE_TEST_AUTH_MOCK": "false",
+        "NEXT_PUBLIC_APP_URL": "https://parikshaverse.in",
+        "EMAIL_FROM": "ParikshaVerse <auth@parikshaverse.in>"
+      }
+    }
+  }
 }

@@ -10,6 +10,10 @@
     "vinext:dev": "vinext dev",
     "vinext:build": "vinext build",
     "vinext:deploy": "vinext-cloudflare deploy",
+    "cf:build": "vinext build",
+    "cf:preview": "vinext-cloudflare deploy --preview",
+    "cf:deploy:staging": "vinext-cloudflare deploy --env staging",
+    "cf:deploy:prod": "vinext-cloudflare deploy --env production",
     "lint": "next lint",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
@@ -19,6 +23,9 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:local": "wrangler d1 migrations apply pariksha-verse-db-local --local",
+    "db:migrate:staging": "wrangler d1 migrations apply pariksha-verse-db-staging --env staging --remote",
+    "db:migrate:prod": "wrangler d1 migrations apply pariksha-verse-db-production --env production --remote",
     "db:seed": "tsx src/db/seeds/run.ts",
     "db:studio": "drizzle-kit studio"
   },
@@ -42,10 +49,12 @@
     "next-themes": "^0.4.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-server-dom-webpack": "19.0.0",
     "tailwind-merge": "^3.0.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.60.2",
     "@cloudflare/workers-types": "^4.20250214.0",
     "@playwright/test": "^1.50.1",
     "@testing-library/dom": "^10.4.0",
@@ -56,6 +65,7 @@
     "@types/react-dom": "^19.0.4",
     "@vinext/cloudflare": "^1.0.0-beta.9",
     "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "0.5.34",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.30.4",
     "eslint": "^9.20.1",
@@ -70,6 +80,7 @@
     "vinext": "^1.0.0-beta.11",
     "vite": "^8.3.0",
     "vitest": "^3.0.5",
-    "wrangler": "^3.109.0"
-  }
+    "wrangler": "4.141.0"
+  },
+  "type": "module"
 }
