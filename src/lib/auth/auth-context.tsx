@@ -5,6 +5,7 @@ import type {
   AuthIdentity,
   AuthStatus,
   AuthenticatedUser,
+  DemoAuthConfig,
   GuestIdentity,
 } from "./auth-types";
 import { getOrCreateGuestIdentity, clearGuestIdentity } from "./guest-identity";
@@ -17,9 +18,11 @@ interface AuthContextValue {
   user: AuthenticatedUser | null;
   guest: GuestIdentity | null;
   isMigrating: boolean;
+  demoAuth: DemoAuthConfig;
   signIn: (email: string) => Promise<{ success: boolean; token?: string; error?: string }>;
   createAccount: (email: string) => Promise<{ success: boolean; token?: string; error?: string }>;
   verify: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
+  demoSignIn: (slot?: string) => Promise<{ success: boolean; error?: string }>;
   continueAsGuest: () => Promise<GuestIdentity>;
   signOut: () => Promise<void>;
 }
@@ -30,6 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [identity, setIdentity] = useState<AuthIdentity | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [isMigrating, setIsMigrating] = useState(false);
+  // Server-decided staging demo availability. Disabled until the server says
+  // otherwise; a client can never flip this on.
+  const [demoAuth, setDemoAuth] = useState<DemoAuthConfig>({
+    enabled: false,
+    options: [],
+  });
 
   // Initialize session or guest identity
   const checkAuth = useCallback(async () => {
@@ -37,21 +46,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 1. Check server session
       const res = await fetch("/api/auth/session", { credentials: "include" });
       if (res.ok) {
-        const data = (await res.json()) as { user?: AuthenticatedUser };
-        if (data.user) {
-          const authUser: AuthenticatedUser = data.user;
-          setIdentity({
-            type: "authenticated",
-            id: authUser.id,
-            user: authUser,
+        const data = (await res.json()) as {
+          user?: AuthenticatedUser;
+          demoAuth?: DemoAuthConfig;
+        };
+        if (
+          data.demoAuth &&
+          typeof data.demoAuth.enabled === "boolean" &&
+          Array.isArray(data.demoAuth.options)
+        ) {
+          setDemoAuth({
+            enabled: data.demoAuth.enabled,
+            options: data.demoAuth.options,
           });
-          setStatus("authenticated");
+        }
+        if (data.user) {
+      const authUser: AuthenticatedUser = data.user;
+      setIdentity({
+        type: "authenticated",
+        id: authUser.id,
+        user: authUser,
+      });
+      setStatus("authenticated");
 
-          // Run background migration if guest data exists
-          setIsMigrating(true);
-          migrateGuestData(authUser.id, appStorage)
-            .finally(() => setIsMigrating(false));
-          return;
+      // Run background migration if guest data exists. Page-load retries are
+      // the safety net: an interrupted attempt stays retryable because guest
+      // data is only cleared after the server confirms success.
+      setIsMigrating(true);
+      migrateGuestData(authUser.id, appStorage).finally(() => setIsMigrating(false));
+      return;
         }
       }
 
@@ -145,14 +168,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setStatus("authenticated");
 
-      // Trigger automatic guest-to-account migration
+      // Migrate guest data BEFORE reporting success so the caller does not
+      // navigate away while the migration request is still in flight — a
+      // full-page navigation would otherwise abort it. migrateGuestData
+      // resolves on failure too (it records retryable state instead of
+      // throwing), so sign-in never breaks when migration cannot complete.
       setIsMigrating(true);
-      migrateGuestData(authUser.id, appStorage)
-        .finally(() => setIsMigrating(false));
+      try {
+        await migrateGuestData(authUser.id, appStorage);
+      } finally {
+        setIsMigrating(false);
+      }
 
       return { success: true };
     } catch {
       return { success: false, error: "Verification request failed" };
+    }
+  }, []);
+
+  const demoSignIn = useCallback(async (slot?: string) => {
+    try {
+      const res = await fetch("/api/auth/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot }),
+        credentials: "include",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        user?: AuthenticatedUser;
+        error?: string;
+      };
+      if (!res.ok) {
+        return { success: false, error: data.error || "Demo sign in failed" };
+      }
+      if (!data.user) {
+        return { success: false, error: "Demo sign in failed" };
+      }
+
+      const authUser: AuthenticatedUser = data.user;
+      setIdentity({
+        type: "authenticated",
+        id: authUser.id,
+        user: authUser,
+      });
+      setStatus("authenticated");
+
+      // Same automatic guest-to-account migration used by email verification.
+      // Awaited (migrateGuestData never throws) so the caller only redirects
+      // once the migration request has actually completed — navigating earlier
+      // could abort the in-flight POST and leave guest data un-migrated.
+      setIsMigrating(true);
+      try {
+        await migrateGuestData(authUser.id, appStorage);
+      } finally {
+        setIsMigrating(false);
+      }
+
+      return { success: true };
+    } catch {
+      return { success: false, error: "Demo sign in request failed" };
     }
   }, []);
 
@@ -188,9 +262,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         guest,
         isMigrating,
+        demoAuth,
         signIn,
         createAccount,
         verify,
+        demoSignIn,
         continueAsGuest,
         signOut,
       }}
@@ -206,9 +282,11 @@ const defaultGuestContext: AuthContextValue = {
   user: null,
   guest: { id: "guest_default", createdAt: 0 },
   isMigrating: false,
+  demoAuth: { enabled: false, options: [] },
   signIn: async () => ({ success: false }),
   createAccount: async () => ({ success: false }),
   verify: async () => ({ success: false }),
+  demoSignIn: async () => ({ success: false }),
   continueAsGuest: async () => ({ id: "guest_default", createdAt: 0 }),
   signOut: async () => {},
 };

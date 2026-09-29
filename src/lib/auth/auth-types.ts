@@ -38,6 +38,24 @@ export interface AuthIdentity {
   user?: AuthenticatedUser;
 }
 
+/**
+ * Public-safe description of one staging demo profile. Contains only the
+ * slot key and display label — never user IDs, emails, or auth internals.
+ */
+export interface DemoAuthOption {
+  slot: string;
+  label: string;
+}
+
+/**
+ * Server-decided availability of staging demo authentication. The client can
+ * only render what the server reports; it can never enable the feature.
+ */
+export interface DemoAuthConfig {
+  enabled: boolean;
+  options: DemoAuthOption[];
+}
+
 export interface GuestMigrationState {
   status: "idle" | "pending" | "in_progress" | "completed" | "failed";
   authenticatedUserId: string | null;
