@@ -199,10 +199,12 @@ npx wrangler rollback <version-id> --env staging
 ```
 
 Substitute a version ID from `npx wrangler deployments list --env staging`.
-Phase 14I deployment: version `1e5f3d99-7a1a-4e2a-9564-87822bcf5cc6` (git SHA
-`b11f2d3e2561f4a372e47f000e1373262a6da21b`); the previous staging version
-`a98c01bc-6c0d-40d4-96bd-47669d1e0921` is the first rollback target. Verify
-with `/api/health` returning the previous build's SHA. A D1 rollback is never
+Phase 14I final deployment: version `e14033ee-b9c1-48e1-a529-7d92f2f7f179`
+(git SHA `8d31e7e3a5cce907b68d0c3f40aca9b01fc680fc`); the previous staging
+version `1e5f3d99-7a1a-4e2a-9564-87822bcf5cc6` (the first Phase 14I deploy of
+commit `b11f2d3e`) is the first rollback target, and the pre-14I version
+`a98c01bc-6c0d-40d4-96bd-47669d1e0921` is the second. Verify with
+`/api/health` returning the previous build's SHA. A D1 rollback is never
 automatic and requires explicit compatibility analysis first (see
 `docs/phase-14h-deployment.md` §5).
 
