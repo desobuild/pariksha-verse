@@ -174,7 +174,7 @@ exam select, app shell, health, readiness, request IDs.)
 **Staging (deployed):**
 
 ```powershell
-$env:PLAYWRIGHT_BASE_URL = "https://staging.parikshaverse.in"
+$env:PLAYWRIGHT_BASE_URL = "https://pariksha-verse-staging.desobuild.workers.dev"
 $env:PLAYWRIGHT_TARGET = "staging"
 pnpm test:e2e -- tests/e2e/staging/smoke.spec.ts tests/e2e/security-headers.spec.ts
 ```

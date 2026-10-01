@@ -49,7 +49,9 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "ENABLE_TEST_AUTH_MOCK": "false",
-        "NEXT_PUBLIC_APP_URL": "https://staging.parikshaverse.in",
+        // Phase 14I: the public deployment contract — staging is served from
+        // its workers.dev subdomain (no custom domain exists or is planned).
+        "NEXT_PUBLIC_APP_URL": "https://pariksha-verse-staging.desobuild.workers.dev",
         "EMAIL_FROM": "ParikshaVerse Staging <auth@staging.parikshaverse.in>"
       }
     },

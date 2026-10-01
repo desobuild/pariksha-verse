@@ -77,7 +77,11 @@ describe("Phase 13A.2 — Cloudflare Staging Deployment Readiness", () => {
       );
       expect(config.env.staging.vars.ENVIRONMENT).toBe("staging");
       expect(config.env.staging.vars.ENABLE_TEST_AUTH_MOCK).toBe("false");
-      expect(config.env.staging.vars.NEXT_PUBLIC_APP_URL).toBe("https://staging.parikshaverse.in");
+      // Phase 14I: staging is the PUBLIC deployment and is served from its
+      // workers.dev subdomain — no custom domain exists or is planned.
+      expect(config.env.staging.vars.NEXT_PUBLIC_APP_URL).toBe(
+        "https://pariksha-verse-staging.desobuild.workers.dev"
+      );
 
       // Production
       expect(config.env.production).toBeDefined();
@@ -103,6 +107,24 @@ describe("Phase 13A.2 — Cloudflare Staging Deployment Readiness", () => {
       expect(config.env.staging.d1_databases[0].database_id).not.toBe(
         config.env.production.d1_databases[0].database_id
       );
+    });
+
+    it("regenerates build-info automatically before every deploy (Phase 14I)", () => {
+      const pkgPath = path.resolve(process.cwd(), "package.json");
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+
+      for (const script of ["cf:deploy:staging", "cf:deploy:prod"]) {
+        const command = pkg.scripts[script];
+        expect(command, `${script} must be defined`).toBeDefined();
+        // Phase 14H carried forward: deploying without running the build-info
+        // generator first let the baked deployment SHA go stale. The generator
+        // must be part of the script itself — no manually required pre-step.
+        expect(
+          command.startsWith("node scripts/generate-build-info.mjs && "),
+          `${script} must regenerate build-info before deploying`
+        ).toBe(true);
+        expect(command).toContain("vinext-cloudflare deploy");
+      }
     });
 
     it("does not contain sensitive secrets committed in wrangler.jsonc", () => {
