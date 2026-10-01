@@ -8,9 +8,9 @@ record is appended after the deployment completes.
 
 | Item | Value |
 | --- | --- |
-| Repository state at build | `main` @ `f32b78929d11f2d2178a6628542f590172256f48` (clean tree; all Phase 14A–14G work committed deliberately for deployment auditability) |
-| Application version | `0.1.0` (package.json; also baked as `version` in `/api/health` via `scripts/generate-build-info.mjs`) |
-| Deployment identifier | `f32b78929d11f2d2178a6628542f590172256f48` (baked as `deployment` in `/api/health` and every structured log line) |
+| Repository state at build | `main` @ HEAD of the final pre-deployment commit (clean tree; all Phase 14A–14G work plus this record committed deliberately for deployment auditability — exact SHA recorded in Section 7, baked by `scripts/generate-build-info.mjs` at build time) |
+| Application version | `0.1.0` (package.json; also baked as `version` in `/api/health`) |
+| Deployment identifier | the build-time git SHA, baked as `deployment` in `/api/health` and every structured log line (exact value in Section 7) |
 | Worker (production) | `pariksha-verse-production` |
 | Worker (staging) | `pariksha-verse-staging` |
 | Production D1 | `pariksha-verse-db-production` (`34609461-2d5e-4bad-9088-71a9416c36f1`) |
@@ -72,9 +72,8 @@ deployment performs zero D1 mutations.
 - Cloudflare dashboard: Workers & Pages → `pariksha-verse-production` →
   Deployments → newest entry (Author, Source = Upload, timestamp, Version ID).
 - CLI: `npx wrangler deployments list --env production`.
-- Application-side: `GET /api/health` returns
-  `deployment = f32b78929d11f2d2178a6628542f590172256f48` and
-  `version = 0.1.0`; every Workers Log line carries the same fields.
+- Application-side: `GET /api/health` returns `deployment = <build-time git
+  SHA>` and `version = 0.1.0`; every Workers Log line carries the same fields.
 
 ## 5. Rollback procedure
 
