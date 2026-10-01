@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { studySessionRepository } from "@/repositories/study-session.repository";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const createSessionSchema = z.object({
   workspaceId: z.string().min(1),
@@ -12,7 +13,11 @@ const createSessionSchema = z.object({
   plannerTaskId: z.string().min(1).nullable().optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date().nullable().optional(),
-  durationMinutes: z.number().int().min(0).max(24 * 60),
+  durationMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60),
   sessionType: z.string().min(1).max(50).optional(),
 });
 
@@ -27,23 +32,32 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
 
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
 
-  const sessions = await studySessionRepository.getSessionsForWorkspaceId(getDb(), workspaceId);
-  return NextResponse.json({ sessions });
+    const sessions = await studySessionRepository.getSessionsForWorkspaceId(getDb(), workspaceId);
+    return NextResponse.json({ sessions });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.study_sessions.failure",
+      error,
+      request,
+      message: "Failed to load study sessions",
+    });
+  }
 }
 
 export async function POST(request: Request) {
@@ -73,7 +87,12 @@ export async function POST(request: Request) {
       sessionType: parsed.data.sessionType ?? "focused",
     });
     return NextResponse.json(created, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to save study session" }, { status: 500 });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.study_sessions.failure",
+      error,
+      request,
+      message: "Failed to save study session",
+    });
   }
 }

@@ -59,7 +59,7 @@
         {
           "binding": "DB",
           "database_name": "pariksha-verse-db-production",
-          "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID",
+          "database_id": "34609461-2d5e-4bad-9088-71a9416c36f1",
           "migrations_dir": "src/db/migrations"
         }
       ],

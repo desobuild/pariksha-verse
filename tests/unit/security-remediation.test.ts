@@ -36,6 +36,7 @@ import {
 import { mockTestRepository } from "@/repositories/mock-test.repository";
 import { guestMigrationPayloadSchema } from "@/lib/auth/guest-migration-schema";
 import { executeServerMigration } from "@/lib/auth/guest-migration-server";
+import { recordVerificationTokenIssued } from "@/lib/auth/verification-tokens";
 import { POST as signInHandler } from "@/app/api/auth/sign-in/route";
 import { POST as createAccountHandler } from "@/app/api/auth/create-account/route";
 import { POST as verifyHandler } from "@/app/api/auth/verify/route";
@@ -164,6 +165,10 @@ describe("Phase 13A.1 — Authentication & Security Remediation", () => {
     it("3. verification still works with a valid test adapter/mock", async () => {
       const email = "verify_student@example.com";
       const token = await createMagicLinkToken(email);
+      // Phase 14E: tokens are one-time-use, so a token only verifies once its
+      // server-side record exists — exactly what the sign-in route does before
+      // delivering it.
+      await recordVerificationTokenIssued(db, { email, token });
 
       const req = new Request("http://localhost:3000/api/auth/verify", {
         method: "POST",

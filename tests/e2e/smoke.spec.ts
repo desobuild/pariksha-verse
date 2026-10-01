@@ -10,9 +10,7 @@ test.describe("ParikshaVerse Smoke Tests", () => {
       page.getByRole("heading", { name: /complete exam prep companion/i })
     ).toBeVisible();
     await expect(page.getByRole("link", { name: /get started/i })).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: /already have an account/i })
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /already have an account/i })).toBeVisible();
   });
 
   test("exam selection route renders available competitive exams", async ({ page }) => {
@@ -33,5 +31,37 @@ test.describe("ParikshaVerse Smoke Tests", () => {
     await page.goto("/app/more");
     await expect(page.getByRole("heading", { name: "More" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Home" }).first()).toBeVisible();
+  });
+
+  test("health and readiness APIs report operational status (Phase 14G)", async ({ request }) => {
+    const health = await request.get("/api/health");
+    expect(health.status()).toBe(200);
+    const healthBody = (await health.json()) as Record<string, unknown>;
+    expect(healthBody.ok).toBe(true);
+    expect(healthBody.status).toBe("healthy");
+    expect(healthBody.service).toBe("pariksha-verse");
+    expect(String(healthBody.version)).toBeTruthy();
+    expect(String(healthBody.deployment)).toBeTruthy();
+    // Diagnostic payload stays minimal: no secrets, no binding details.
+    const raw = JSON.stringify(healthBody).toLowerCase();
+    expect(raw).not.toContain("secret");
+    expect(raw).not.toContain("token");
+    expect(raw).not.toContain("prepare");
+
+    // Readiness verifies the real dependencies (D1 reachability, auth
+    // configuration) — must be green on a working dev deployment.
+    const ready = await request.get("/api/health/ready");
+    expect(ready.status()).toBe(200);
+    expect(((await ready.json()) as Record<string, unknown>).ok).toBe(true);
+  });
+
+  test("API responses carry an X-Request-ID correlation header (Phase 14G)", async ({
+    request,
+  }) => {
+    const response = await request.get("/api/health");
+    expect(response.status()).toBe(200);
+    const requestId = response.headers()["x-request-id"];
+    expect(requestId).toBeTruthy();
+    expect(requestId.trim().length).toBeGreaterThanOrEqual(8);
   });
 });

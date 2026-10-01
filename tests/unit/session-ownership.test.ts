@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createTestDb } from "./db-test-adapter";
 import type { DatabaseInstance } from "@/db";
 import { users, userWorkspaces, examAttempts, exams } from "@/db/schema";
+import { issueSession } from "@/lib/auth/session-store";
 import { createSessionToken } from "@/lib/auth/crypto-session";
 import { getSession, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
@@ -58,9 +59,11 @@ describe("Session Validation & Ownership Enforcement", () => {
       updatedAt: new Date(),
     });
 
-    const token = await createSessionToken(userId, email);
+    // Phase 14E: sessions authenticate only when their signed jti resolves to
+    // a live server-side record — issueSession creates both.
+    const issued = await issueSession(db, userId, email);
     const headers = new Headers();
-    headers.set("cookie", `${SESSION_COOKIE_NAME}=${token}`);
+    headers.set("cookie", `${SESSION_COOKIE_NAME}=${issued.token}`);
 
     const session = await getSession(headers, db);
     expect(session).not.toBeNull();
@@ -71,6 +74,27 @@ describe("Session Validation & Ownership Enforcement", () => {
   it("rejects session if token payload userId is not in D1 users table", async () => {
     const ghostUserId = "usr_ghost_nonexistent";
     const token = await createSessionToken(ghostUserId, "ghost@test.com");
+    const headers = new Headers();
+    headers.set("cookie", `${SESSION_COOKIE_NAME}=${token}`);
+
+    const session = await getSession(headers, db);
+    expect(session).toBeNull();
+  });
+
+  it("rejects a signed session token whose jti has no server-side session record", async () => {
+    // Phase 14E: a validly signed token for an existing user still fails
+    // closed when no user_sessions record matches its jti — pre-14E cookies
+    // and forged jti claims cannot authenticate.
+    const userId = "usr_no_record";
+    const email = "norecord@parikshaverse.in";
+    await db.insert(users).values({
+      id: userId,
+      email,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const token = await createSessionToken(userId, email);
     const headers = new Headers();
     headers.set("cookie", `${SESSION_COOKIE_NAME}=${token}`);
 

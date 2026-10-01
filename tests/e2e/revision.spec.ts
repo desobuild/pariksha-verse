@@ -384,7 +384,13 @@ test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
         .getByRole("link", { name: /units of measurement/i })
         .click();
       await page.getByRole("button", { name: /change status/i }).click();
+      // Optimistic UI: confirm the server write before navigating (a goto
+      // aborts the in-flight PUT — visible under staging latency).
+      const learnedWrite = page.waitForResponse(
+        (res) => res.url().includes("/api/progress") && res.request().method() === "PUT"
+      );
       await page.getByRole("menuitemradio", { name: /^learned/i }).click();
+      await learnedWrite;
       await expect(page.getByText("Learned").first()).toBeVisible();
 
       await page.goto("/app/revision");
@@ -431,7 +437,17 @@ test.describe("Phase 8 Revision Queue & Spaced Review E2E", () => {
       ).toBeVisible();
 
       await section(page, "Due Today").getByRole("link", { name: /review topic/i }).click();
+      // Completion writes both the revision item and the progress row; the
+      // success toast is optimistic. Wait for both server writes before
+      // navigating (a goto aborts in-flight PUTs under staging latency).
+      const revisionWrite = page.waitForResponse(
+        (res) => res.url().includes("/api/revision") && res.request().method() === "PUT"
+      );
+      const progressWrite = page.waitForResponse(
+        (res) => res.url().includes("/api/progress") && res.request().method() === "PUT"
+      );
       await page.getByRole("button", { name: /mark as revised/i }).click();
+      await Promise.all([revisionWrite, progressWrite]);
       await expect(page.getByText("Revision completed. Next review in 3 days.")).toBeVisible();
 
       // Completion persisted server-side: still revised after a reload

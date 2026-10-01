@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, request as apiRequest } from "@playwright/test";
 import {
   attachHealthCollector,
   demoSignIn,
@@ -74,6 +74,38 @@ test.describe("Staging Demo Authentication", () => {
       await btn.click();
       await expect(btn).toHaveAttribute("aria-pressed", "true");
     }
+  });
+
+  test("sign-out invalidates the demo session server-side — a stolen cookie dies", async ({ page }) => {
+    // Phase 14E: logout must revoke the pv_session record in D1, so the same
+    // cookie can never authenticate again — not merely clear it from the
+    // browser. A standalone API context (its own cookie jar) replays the
+    // captured "stolen" cookie before and after sign-out.
+    await demoSignIn(page, "Friend 1");
+
+    const sessionCookie = (await page.context().cookies()).find(
+      (c) => c.name === "pv_session"
+    );
+    expect(sessionCookie, "pv_session cookie must exist after demo sign-in").toBeTruthy();
+
+    const origin = new URL(page.url()).origin;
+    const stolen = await apiRequest.newContext({
+      baseURL: origin,
+      extraHTTPHeaders: { cookie: `pv_session=${sessionCookie!.value}` },
+    });
+    const before = await stolen.get("/api/auth/session");
+    expect(before.status()).toBe(200);
+    const beforeBody = (await before.json()) as { user: { id: string } | null };
+    expect(beforeBody.user?.id).toBeTruthy();
+
+    await demoSignOut(page);
+
+    const after = await stolen.get("/api/auth/session");
+    expect(after.status()).toBe(200);
+    const afterBody = (await after.json()) as { user: unknown };
+    expect(afterBody.user).toBeNull();
+
+    await stolen.dispose();
   });
 
   test("arbitrary slot values are not accepted by the panel UI", async ({ page }) => {

@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { questionRepository } from "@/repositories/question.repository";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -19,28 +20,37 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { sessionId } = await params;
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
+
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
+
+    const db = getDb();
+    const qSession = await questionRepository.getSession(db, sessionId, workspaceId);
+
+    if (!qSession) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(qSession);
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.practice.session_detail.failure",
+      error,
+      request,
+      message: "Failed to load practice session",
+    });
   }
-
-  const { sessionId } = await params;
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
-
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
-
-  const db = getDb();
-  const qSession = await questionRepository.getSession(db, sessionId, workspaceId);
-
-  if (!qSession) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(qSession);
 }

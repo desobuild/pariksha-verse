@@ -465,7 +465,14 @@ test.describe("Phase 12 Analytics & Exam Readiness E2E", () => {
         .getByRole("link", { name: /units of measurement/i })
         .click();
       await page.getByRole("button", { name: /change status/i }).click();
+      // The UI updates optimistically; wait for the server write itself to be
+      // acknowledged before navigating, otherwise the in-flight PUT is aborted
+      // by the navigation (visible under staging latency, not locally).
+      const progressWrite = page.waitForResponse(
+        (res) => res.url().includes("/api/progress") && res.request().method() === "PUT"
+      );
       await page.getByRole("menuitemradio", { name: /^learned/i }).click();
+      await progressWrite;
       await expect(page.getByText("Learned").first()).toBeVisible();
 
       // Analytics render server-backed coverage.

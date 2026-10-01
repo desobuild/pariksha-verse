@@ -108,6 +108,48 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
     [data, topicId]
   );
 
+  // ---------------------------------------------------------------------------
+  // Stale-write protection
+  //
+  // Every topic-progress read-modify-write funnels through this FIFO chain so
+  // concurrent writers — a user status change and the fire-and-forget
+  // study-session refresh below — can never interleave: a task's fresh read
+  // happens only after the previous task's write has fully settled. Without
+  // it, a refresh that began before "Mark Learned" could land its full-record
+  // upsert afterwards and revert the newer status.
+  // ---------------------------------------------------------------------------
+  const progressQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
+  // Latest committed data snapshot, used only as a fallback when the fresh
+  // repository read inside a queued task fails.
+  const dataRef = React.useRef<TopicDetailData | null>(null);
+
+  React.useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  const enqueueProgressWrite = React.useCallback((task: () => Promise<void>) => {
+    const result = progressQueueRef.current.then(task);
+    // The chain itself must never reject, or every later task would stall.
+    progressQueueRef.current = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }, []);
+
+  // Reads the persisted progress for this topic; falls back to the latest
+  // rendered snapshot only when the repository read itself fails. Reading
+  // inside a queued turn is what makes each write see the settled result of
+  // all earlier writes instead of a stale page-load snapshot.
+  const readLatestProgress = React.useCallback(async (): Promise<UserTopicProgress | null> => {
+    if (!workspace || !metadata) return null;
+    try {
+      return await repos.progress.getProgress(workspace.id, metadata.topicId);
+    } catch {
+      return dataRef.current?.progressList.find((p) => p.topicId === metadata.topicId) ?? null;
+    }
+  }, [repos, workspace, metadata]);
+
   const topicSessions = React.useMemo(
     () =>
       (data?.sessions ?? [])
@@ -182,17 +224,21 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
     );
   }
 
-  const handleStatusChange = async (next: TopicStatus) => {
-    if (!workspace) return;
+  const handleStatusChange = (next: TopicStatus) => {
+    if (!workspace || !metadata) return;
     setSavingStatus(true);
     setRevisionFeedback(null);
-    try {
+    const task = async () => {
+      // Re-read inside the serialized turn: a queued study-session refresh may
+      // have written lastStudiedAt after this render, and this status change
+      // must not clobber it.
+      const latest = await readLatestProgress();
       const saved = await repos.progress.upsertProgress(
         applyTopicStatusChange({
           workspaceId: workspace.id,
           topicId: metadata.topicId,
           status: next,
-          existing: progress,
+          existing: latest,
         })
       );
       setData((prev) =>
@@ -206,22 +252,22 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
             }
           : prev
       );
-    } finally {
-      setSavingStatus(false);
-    }
+    };
+    return enqueueProgressWrite(task).finally(() => setSavingStatus(false));
   };
 
-  const handleMarkRevised = async () => {
-    if (!workspace || markingRevision) return;
+  const handleMarkRevised = () => {
+    if (!workspace || !metadata || markingRevision) return;
     setMarkingRevision(true);
     setRevisionFeedback(null);
-    const completion = applyRevisionCompletion({
-      workspaceId: workspace.id,
-      topicId: metadata.topicId,
-      existingProgress: progress,
-      existingRevisionItem: revisionItem,
-    });
-    try {
+    const task = async () => {
+      const latest = await readLatestProgress();
+      const completion = applyRevisionCompletion({
+        workspaceId: workspace.id,
+        topicId: metadata.topicId,
+        existingProgress: latest,
+        existingRevisionItem: revisionItem,
+      });
       // Revision item first (authoritative revisionNumber), then progress
       // timestamps/schedule; the queue reads either, so a partial write
       // still leaves a consistent schedule behind.
@@ -248,12 +294,13 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
           completion.nextIntervalDays === 1 ? "day" : "days"
         }.`,
       });
-    } catch {
-      // Nothing was persisted on failure paths that throw; state stays intact.
-      setRevisionFeedback({ kind: "error", message: "Couldn't update revision. Try again." });
-    } finally {
-      setMarkingRevision(false);
-    }
+    };
+    void enqueueProgressWrite(task)
+      .catch(() => {
+        // Nothing was persisted on failure paths that throw; state stays intact.
+        setRevisionFeedback({ kind: "error", message: "Couldn't update revision. Try again." });
+      })
+      .finally(() => setMarkingRevision(false));
   };
 
   const handleCreateSession = async (input: {
@@ -277,39 +324,42 @@ export function TopicDetailView({ topicId }: TopicDetailViewProps) {
   const handleSessionCreated = (session: StudySession) => {
     setData((prev) => (prev ? { ...prev, sessions: [...prev.sessions, session] } : prev));
     // Refresh lastStudiedAt without touching the preparation status. The
-    // progress PUT is a full-record upsert, so the status must come from a
-    // fresh server read — the render snapshot can be stale and would
-    // otherwise overwrite a status another action has already advanced.
-    if (workspace) {
-      void (async () => {
-        try {
-          const fresh =
-            (await repos.progress
-              .getProgress(workspace.id, metadata.topicId)
-              .catch(() => null)) ?? progress;
-          const saved = await repos.progress.upsertProgress(
-            applyStudySessionToProgress({
-              workspaceId: workspace.id,
-              topicId: metadata.topicId,
-              existing: fresh,
-            })
-          );
-          setData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  progressList: [
-                    ...prev.progressList.filter((p) => p.topicId !== saved.topicId),
-                    saved,
-                  ],
-                }
-              : prev
-          );
-        } catch {
-          // Keep prior behavior: lastStudiedAt refresh is best-effort.
-        }
-      })();
-    }
+    // progress PUT is a full-record upsert, so this runs as ONE serialized
+    // queue turn — fresh read, then write — alongside the user status-change
+    // actions. A refresh that started before "Mark Learned" therefore can no
+    // longer land a pre-session snapshot afterwards and revert the status.
+    if (!workspace || !metadata) return;
+    void enqueueProgressWrite(async () => {
+      // Only write from a successful fresh read: falling back to a page-load
+      // snapshot here is exactly the stale write this queue exists to prevent.
+      // lastStudiedAt is best-effort and self-heals on the next user action.
+      let fresh: UserTopicProgress | null = null;
+      try {
+        fresh = await repos.progress.getProgress(workspace.id, metadata.topicId);
+      } catch {
+        return;
+      }
+      const saved = await repos.progress.upsertProgress(
+        applyStudySessionToProgress({
+          workspaceId: workspace.id,
+          topicId: metadata.topicId,
+          existing: fresh,
+        })
+      );
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              progressList: [
+                ...prev.progressList.filter((p) => p.topicId !== saved.topicId),
+                saved,
+              ],
+            }
+          : prev
+      );
+    }).catch(() => {
+      // Keep prior behavior: lastStudiedAt refresh is best-effort.
+    });
   };
 
   const nextRevisionAt = toDate(revisionItem?.nextRevisionAt ?? progress?.nextRevisionAt ?? null);

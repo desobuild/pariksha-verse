@@ -87,7 +87,7 @@ describe("Phase 13A.2 — Cloudflare Staging Deployment Readiness", () => {
         "pariksha-verse-db-production"
       );
       expect(config.env.production.d1_databases[0].database_id).toBe(
-        "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID"
+        "34609461-2d5e-4bad-9088-71a9416c36f1"
       );
       expect(config.env.production.vars.ENVIRONMENT).toBe("production");
       expect(config.env.production.vars.ENABLE_TEST_AUTH_MOCK).toBe("false");
@@ -99,6 +99,9 @@ describe("Phase 13A.2 — Cloudflare Staging Deployment Readiness", () => {
       );
       expect(config.env.staging.d1_databases[0].database_name).not.toBe(
         config.env.production.d1_databases[0].database_name
+      );
+      expect(config.env.staging.d1_databases[0].database_id).not.toBe(
+        config.env.production.d1_databases[0].database_id
       );
     });
 

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/db";
 import { userPreferences } from "@/db/schema";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const savePreferencesSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
@@ -21,19 +22,29 @@ const savePreferencesSchema = z.object({
     .optional(),
 });
 
-export async function GET(request: Request) {  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(request: Request) {
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, session.user.id))
+      .limit(1);
+
+    return NextResponse.json({ preferences: rows[0] ?? null });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.preferences.failure",
+      error,
+      request,
+      message: "Failed to load preferences",
+    });
   }
-
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(userPreferences)
-    .where(eq(userPreferences.userId, session.user.id))
-    .limit(1);
-
-  return NextResponse.json({ preferences: rows[0] ?? null });
 }
 
 export async function PUT(request: Request) {
@@ -78,7 +89,13 @@ export async function PUT(request: Request) {
       .where(eq(userPreferences.userId, session.user.id))
       .returning();
 
-    return NextResponse.json(updated[0]);  } catch {
-    return NextResponse.json({ error: "Failed to save preferences" }, { status: 500 });
+    return NextResponse.json(updated[0]);
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.preferences.failure",
+      error,
+      request,
+      message: "Failed to save preferences",
+    });
   }
 }

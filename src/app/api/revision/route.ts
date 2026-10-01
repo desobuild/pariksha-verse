@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { revisionItemRepository } from "@/repositories/revision.repository";
 import { getTopicMetadata } from "@/domain/dashboard";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const revisionStatusEnum = z.enum(["scheduled", "completed", "skipped"]);
 
@@ -30,26 +31,35 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
 
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
 
-  const revisionItems = await revisionItemRepository.getRevisionItemsForWorkspace(
-    getDb(),
-    workspaceId
-  );
-  return NextResponse.json({ revisionItems });
+    const revisionItems = await revisionItemRepository.getRevisionItemsForWorkspace(
+      getDb(),
+      workspaceId
+    );
+    return NextResponse.json({ revisionItems });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.revision.failure",
+      error,
+      request,
+      message: "Failed to load revision items",
+    });
+  }
 }
 
 export async function PUT(request: Request) {
@@ -77,9 +87,19 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Topic not found for this exam" }, { status: 400 });
     }
 
-    const saved = await revisionItemRepository.upsertRevisionItem(getDb(), parsed.data);
+    // Phase 14E: the client never chooses a revision row PK. The server
+    // resolves the existing row by (workspaceId, topicId) and generates IDs on
+    // insert, so a client-supplied id is dropped before persistence.
+    const { id: _clientSuppliedId, ...upsertData } = parsed.data;
+    void _clientSuppliedId;
+    const saved = await revisionItemRepository.upsertRevisionItem(getDb(), upsertData);
     return NextResponse.json(saved);
-  } catch {
-    return NextResponse.json({ error: "Failed to save revision item" }, { status: 500 });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.revision.failure",
+      error,
+      request,
+      message: "Failed to save revision item",
+    });
   }
 }

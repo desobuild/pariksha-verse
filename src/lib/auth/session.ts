@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import type { DatabaseInstance } from "@/db";
-import { users } from "@/db/schema";
+import { users, userSessions } from "@/db/schema";
 import { getDb } from "@/db";
 import { verifyToken, type SessionTokenPayload } from "./crypto-session";
 import type { AuthSession } from "./auth-types";
 import { getCloudflareEnv } from "@/lib/cloudflare/env";
+import { logger } from "@/lib/observability/logger";
 
 export const SESSION_COOKIE_NAME = "pv_session";
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
@@ -12,7 +13,10 @@ export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 /**
  * Extracts a cookie value by name from a raw cookie string.
  */
-export function extractCookie(cookieHeader: string | null | undefined, name: string): string | null {
+export function extractCookie(
+  cookieHeader: string | null | undefined,
+  name: string
+): string | null {
   if (!cookieHeader) return null;
   const parts = cookieHeader.split(";");
   for (const part of parts) {
@@ -111,13 +115,13 @@ export function shouldUseSecureCookie(
   }
 
   const isServerOrTest =
-    typeof window === "undefined" ||
-    !!process.env.VITEST ||
-    process.env.NODE_ENV === "test";
+    typeof window === "undefined" || !!process.env.VITEST || process.env.NODE_ENV === "test";
   const cfEnv = isServerOrTest ? getCloudflareEnv() : {};
   const env = (
     cfEnv.ENVIRONMENT ||
-    (typeof process !== "undefined" ? process.env?.ENVIRONMENT || process.env?.NODE_ENV : undefined) ||
+    (typeof process !== "undefined"
+      ? process.env?.ENVIRONMENT || process.env?.NODE_ENV
+      : undefined) ||
     "development"
   ).toLowerCase();
 
@@ -155,6 +159,12 @@ export function createClearSessionCookie(
  * Resolves the authenticated user session from a Request, Headers, or raw Cookie string.
  * Strictly derives user identity from the validated cryptographic token and D1 database.
  * Never trusts a client-supplied user ID.
+ *
+ * Phase 14E: the signed session payload must carry a `jti` matching a live
+ * (unexpired, unrevoked) `user_sessions` record. This is what makes logout
+ * revoke a session server-side and kills stolen/replayed cookies. Tokens
+ * without a record — including pre-14E sessions and forged jti claims — fail
+ * closed.
  */
 export async function getSession(
   source?: Request | Headers | string | null,
@@ -176,15 +186,27 @@ export async function getSession(
   if (!token) return null;
 
   const payload = await verifyToken<SessionTokenPayload>(token);
-  if (!payload || !payload.userId) return null;
+  if (!payload || !payload.userId || !payload.jti) return null;
 
   try {
     const db = dbInstance ?? getDb();
-    const rows = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, payload.userId))
+
+    // Server-side session lifecycle: the signed jti must resolve to a live
+    // record. Revoked (logout) and expired records no longer authenticate.
+    const sessionRows = await db
+      .select({ id: userSessions.id })
+      .from(userSessions)
+      .where(
+        and(
+          eq(userSessions.id, payload.jti),
+          isNull(userSessions.revokedAt),
+          gt(userSessions.expiresAt, new Date())
+        )
+      )
       .limit(1);
+    if (!sessionRows[0]) return null;
+
+    const rows = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
 
     const user = rows[0];
     if (!user) return null;
@@ -193,12 +215,23 @@ export async function getSession(
       user: {
         id: user.id,
         email: user.email,
-        createdAt: user.createdAt instanceof Date ? user.createdAt.getTime() : Number(user.createdAt),
-        updatedAt: user.updatedAt instanceof Date ? user.updatedAt.getTime() : Number(user.updatedAt),
+        createdAt:
+          user.createdAt instanceof Date ? user.createdAt.getTime() : Number(user.createdAt),
+        updatedAt:
+          user.updatedAt instanceof Date ? user.updatedAt.getTime() : Number(user.updatedAt),
       },
       expiresAt: payload.exp * 1000,
     };
-  } catch {
+  } catch (error) {
+    // Phase 14G: a D1 failure previously became an indistinguishable "not
+    // authenticated" — it now also leaves a server-side signal. The
+    // fail-closed semantics are unchanged (no user data is logged, and the
+    // caller still sees null).
+    logger.error("db.query.failure", {
+      scope: "auth.session",
+      error_name: error instanceof Error ? error.name : "UnknownError",
+      error_message: error instanceof Error ? error.message : undefined,
+    });
     return null;
   }
 }

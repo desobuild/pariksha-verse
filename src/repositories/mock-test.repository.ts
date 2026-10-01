@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import type { DatabaseInstance } from "@/db";
 import {
   mockTests,
@@ -642,6 +642,12 @@ export const mockTestRepository = {
 
   /**
    * Retrieves all completed results for a workspace.
+   *
+   * Phase 14E: results are filtered in SQL by the workspace's own mock test
+   * IDs (chunked to respect D1's bound-parameter limit) instead of scanning
+   * the whole mock_test_results table and filtering in JS, so isolation no
+   * longer depends on ID-format conventions and the query scales with the
+   * workspace, not the global table.
    */
   async getAllResultsForWorkspace(
     db: DatabaseInstance,
@@ -651,9 +657,21 @@ export const mockTestRepository = {
     const testIds = tests.map((t) => t.id);
     if (testIds.length === 0) return [];
 
-    const rows = await db.select().from(mockTestResults).orderBy(desc(mockTestResults.completedAt));
+    const chunkSize = 80;
+    const rows: (typeof mockTestResults.$inferSelect)[] = [];
+    for (let i = 0; i < testIds.length; i += chunkSize) {
+      const chunk = testIds.slice(i, i + chunkSize);
+      const chunkRows = await db
+        .select()
+        .from(mockTestResults)
+        .where(inArray(mockTestResults.mockTestId, chunk));
+      rows.push(...chunkRows);
+    }
+    rows.sort(
+      (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+    );
 
-    const matching = rows.filter((r) => testIds.includes(r.mockTestId));
+    const matching = rows;
     const testMap = new Map(tests.map((t) => [t.id, t.title]));
 
     return matching.map((r) => {

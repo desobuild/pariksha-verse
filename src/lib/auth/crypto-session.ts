@@ -5,6 +5,13 @@
  */
 
 export interface SessionTokenPayload {
+  /**
+   * Server-side session record id (`user_sessions.id`). Phase 14E: sessions
+   * carry a jti so they can be revoked server-side (logout kills a stolen
+   * cookie). getSession() fails closed when the signed jti has no live,
+   * unrevoked record.
+   */
+  jti: string;
   userId: string;
   email: string;
   exp: number; // Unix timestamp in seconds
@@ -12,6 +19,14 @@ export interface SessionTokenPayload {
 }
 
 export interface VerificationTokenPayload {
+  /**
+   * Unique token instance id. Phase 14E: guarantees two tokens issued for the
+   * same email within the same second (identical iat/exp) are still distinct
+   * strings, so each delivered link is independently one-time-use. Optional in
+   * the type only because consumption is by digest — tokens without it are
+   * still verifiable once recorded.
+   */
+  jti?: string;
   email: string;
   purpose: "magic_link" | "verify_email";
   exp: number; // Unix timestamp in seconds
@@ -199,21 +214,33 @@ export async function verifyToken<T extends { exp?: number }>(
 
 /**
  * Generates an authenticated session token valid for 30 days.
+ *
+ * `jti` ties the signed token to its server-side `user_sessions` record (see
+ * session-store.ts); when omitted, one is generated so standalone callers
+ * still get a well-formed payload. Such a token only authenticates once its
+ * record exists.
  */
 export async function createSessionToken(
   userId: string,
   email: string,
-  secret?: string
+  secret?: string,
+  jti?: string
 ): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const payload: SessionTokenPayload = {
+    jti: jti ?? `ses_${crypto.randomUUID()}`,
     userId,
     email,
     iat: nowSec,
-    exp: nowSec + 30 * 24 * 60 * 60, // 30 days
+    exp: nowSec + SESSION_TTL_SECONDS, // 30 days
   };
   return signToken(payload, secret);
 }
+
+/** Magic-link validity window (seconds). Shared by issuer and record store. */
+export const MAGIC_LINK_TTL_SECONDS = 15 * 60;
+/** Session validity window (seconds). Shared by issuer, cookie and records. */
+export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 /**
  * Generates a short-lived magic-link verification token (15 minutes).
@@ -224,10 +251,11 @@ export async function createMagicLinkToken(
 ): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const payload: VerificationTokenPayload = {
+    jti: crypto.randomUUID(),
     email,
     purpose: "magic_link",
     iat: nowSec,
-    exp: nowSec + 15 * 60, // 15 minutes
+    exp: nowSec + MAGIC_LINK_TTL_SECONDS, // 15 minutes
   };
   return signToken(payload, secret);
 }

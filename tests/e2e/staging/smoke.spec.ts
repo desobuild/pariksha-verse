@@ -1,10 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  attachHealthCollector,
-  formatIssues,
-  skipIfProject,
-  STAGING_FRIENDS,
-} from "./helpers";
+import { attachHealthCollector, formatIssues, skipIfProject, STAGING_FRIENDS } from "./helpers";
 
 /**
  * Phase 2 — Staging smoke test.
@@ -16,18 +11,28 @@ import {
 test.describe("Staging Smoke", () => {
   skipIfProject(/Mobile/);
 
-  const PUBLIC_ROUTES = ["/", "/auth/sign-in", "/auth/create-account", "/exam/select", "/legal/privacy"];
+  const PUBLIC_ROUTES = [
+    "/",
+    "/auth/sign-in",
+    "/auth/create-account",
+    "/exam/select",
+    "/legal/privacy",
+  ];
 
   for (const route of PUBLIC_ROUTES) {
     test(`public route ${route} loads cleanly`, async ({ page }) => {
       const health = attachHealthCollector(page);
       const response = await page.goto(route);
-      expect(response?.status(), `${route} should return a success/redirect status`).toBeLessThan(400);
+      expect(response?.status(), `${route} should return a success/redirect status`).toBeLessThan(
+        400
+      );
       await expect(page.locator("body")).toBeVisible();
 
       // Landing renders the brand; sign-in renders the staging demo panel.
       if (route === "/") {
-        await expect(page.getByRole("heading", { name: /complete exam prep companion/i })).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: /complete exam prep companion/i })
+        ).toBeVisible();
         await expect(page.getByRole("link", { name: /get started/i })).toBeVisible();
         await expect(page.getByRole("link", { name: /already have an account/i })).toBeVisible();
       }
@@ -46,11 +51,16 @@ test.describe("Staging Smoke", () => {
       }
 
       await health.stop();
-      expect(health.unexpected(), `Unexpected runtime issues on ${route}:\n${formatIssues(health.issues)}`).toEqual([]);
+      expect(
+        health.unexpected(),
+        `Unexpected runtime issues on ${route}:\n${formatIssues(health.issues)}`
+      ).toEqual([]);
     });
   }
 
-  test("protected /app routes follow the auth design for workspace-less visitors", async ({ page }) => {
+  test("protected /app routes follow the auth design for workspace-less visitors", async ({
+    page,
+  }) => {
     const health = attachHealthCollector(page);
 
     // Workspace-less visitors are routed into exam setup from preparation home.
@@ -64,7 +74,10 @@ test.describe("Staging Smoke", () => {
     await expect(page.getByText(/guest mode/i).first()).toBeVisible();
 
     await health.stop();
-    expect(health.unexpected(), `Unexpected runtime issues:\n${formatIssues(health.issues)}`).toEqual([]);
+    expect(
+      health.unexpected(),
+      `Unexpected runtime issues:\n${formatIssues(health.issues)}`
+    ).toEqual([]);
   });
 
   test("health API reports healthy", async ({ request }) => {
@@ -72,6 +85,37 @@ test.describe("Staging Smoke", () => {
     expect(res.status()).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(JSON.stringify(body).toLowerCase()).not.toContain('"ok":false');
+  });
+
+  test("health API identifies the staging deployment (Phase 14G)", async ({ request }) => {
+    const res = await request.get("/api/health");
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Targets still serving the pre-14G build answer with the legacy health
+    // body (no `ok`/`version`/`deployment`); the full contract activates with
+    // the next staging deployment and is then enforced on every run.
+    test.skip(body.ok === undefined, "Phase 14G build not deployed to this target yet");
+    expect(body.ok).toBe(true);
+    expect(body.service).toBe("pariksha-verse");
+    expect(body.environment).toBe("staging");
+    expect(String(body.version)).toBeTruthy();
+    expect(String(body.deployment)).toBeTruthy();
+    // Correlation header is present and no secrets are exposed.
+    expect(res.headers()["x-request-id"]).toBeTruthy();
+    const raw = JSON.stringify(body).toLowerCase();
+    expect(raw).not.toContain("secret");
+    expect(raw).not.toContain("token");
+  });
+
+  test("readiness API verifies D1 and configuration (Phase 14G)", async ({ request }) => {
+    const res = await request.get("/api/health/ready");
+    // 404 = pre-14G deployment (the endpoint does not exist yet).
+    test.skip(res.status() === 404, "Phase 14G build not deployed to this target yet");
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    // A ready deployment still exposes no per-component detail.
+    expect(JSON.stringify(body).toLowerCase()).not.toContain("database");
   });
 
   test("demo auth endpoint rejects unknown slots without leaking details", async ({ request }) => {

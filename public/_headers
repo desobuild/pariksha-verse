@@ -1,0 +1,19 @@
+# Phase 14F: headers for Cloudflare Workers Static Assets.
+#
+# Paths served by the asset layer (dist/client) never invoke the Worker, so
+# src/middleware.ts cannot reach them. This file is consumed by Cloudflare's
+# assets implementation at deploy time.
+#
+# vinext skips generating its own _headers when this file exists, so the
+# immutable caching rule it would have emitted for build assets is included
+# here verbatim.
+#
+# Deliberately scoped: static JS/CSS/fonts/images are not documents, so
+# CSP/HSTS/frame/referrer controls are not applied to them — only MIME-sniffing
+# protection and caching, which are the appropriate controls for binaries.
+
+/*
+  X-Content-Type-Options: nosniff
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { mockTestRepository } from "@/repositories/mock-test.repository";
 import { submitMockSessionSchema } from "@/domain/mock-engine";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -37,8 +38,7 @@ export async function POST(
       );
     }
 
-    const { workspaceId, submissionStatus, answers, markedForReview, completedAt } =
-      parsed.data;
+    const { workspaceId, submissionStatus, answers, markedForReview, completedAt } = parsed.data;
 
     const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
     if (!owned) {
@@ -56,8 +56,13 @@ export async function POST(
     });
 
     return NextResponse.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to submit mock test session";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    // Never echo internal exception details (Phase 14F).
+    return apiErrorResponse({
+      event: "api.mock_tests.submit.failure",
+      error,
+      request,
+      message: "Failed to submit mock test session",
+    });
   }
 }

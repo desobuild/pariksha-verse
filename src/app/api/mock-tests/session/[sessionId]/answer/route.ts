@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { mockTestRepository } from "@/repositories/mock-test.repository";
 import { updateMockAnswerSchema } from "@/domain/mock-engine";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -56,8 +57,13 @@ export async function PATCH(
     });
 
     return NextResponse.json({ success: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update answer";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    // Never echo internal exception details (Phase 14F).
+    return apiErrorResponse({
+      event: "api.mock_tests.answer.failure",
+      error,
+      request,
+      message: "Failed to update answer",
+    });
   }
 }

@@ -528,11 +528,17 @@ describe("Phase 13A.3 — Staging Demo Authentication", () => {
       setEnvironment("production");
 
       // Normal email-based flow remains untouched: a signed magic-link token
-      // verifies into a standard session via /api/auth/verify.
+      // verifies into a standard session via /api/auth/verify. The token must
+      // be recorded server-side first (one-time use) — the same record step
+      // the sign-in route performs before delivering the email.
       const { createMagicLinkToken } = await import("@/lib/auth/crypto-session");
+      const { recordVerificationTokenIssued } = await import(
+        "@/lib/auth/verification-tokens"
+      );
       const { POST: verifyHandler } = await import("@/app/api/auth/verify/route");
       const email = "prod.student@example.com";
       const token = await createMagicLinkToken(email);
+      await recordVerificationTokenIssued(db, { email, token });
 
       const res = await verifyHandler(
         new Request("https://parikshaverse.in/api/auth/verify", {

@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { mockTestRepository } from "@/repositories/mock-test.repository";
 import { createMockSessionSchema, InsufficientQuestionsError } from "@/domain/mock-engine";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -16,10 +17,7 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   return rows[0] ?? null;
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ mockId: string }> }
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ mockId: string }> }) {
   const session = await getSession(request);
   if (!session || !session.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -64,7 +62,14 @@ export async function POST(
         { status: 422 }
       );
     }
-    const message = err instanceof Error ? err.message : "Failed to create mock test session";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // The 422 domain error above is the only case that carries detail; every
+    // other failure is generic so internal exceptions never reach the client
+    // (Phase 14F).
+    return apiErrorResponse({
+      event: "api.mock_tests.session.failure",
+      error: err,
+      request,
+      message: "Failed to create mock test session",
+    });
   }
 }

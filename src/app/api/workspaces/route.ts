@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { ensureWorkspaceForUser } from "@/lib/workspaces/ensure-workspace";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const createWorkspaceSchema = z.object({
   examAttemptId: z.string().min(1),
@@ -18,20 +19,29 @@ const createWorkspaceSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const db = getDb();
+    // Strictly enforce ownership by querying only matching authenticated userId
+    const workspaces = await db
+      .select()
+      .from(userWorkspaces)
+      .where(eq(userWorkspaces.userId, session.user.id))
+      .orderBy(desc(userWorkspaces.createdAt));
+
+    return NextResponse.json({ workspaces });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.workspaces.failure",
+      error,
+      request,
+      message: "Failed to load workspaces",
+    });
   }
-
-  const db = getDb();
-  // Strictly enforce ownership by querying only matching authenticated userId
-  const workspaces = await db
-    .select()
-    .from(userWorkspaces)
-    .where(eq(userWorkspaces.userId, session.user.id))
-    .orderBy(desc(userWorkspaces.createdAt));
-
-  return NextResponse.json({ workspaces });
 }
 
 export async function POST(request: Request) {
@@ -54,10 +64,7 @@ export async function POST(request: Request) {
     if (ensure) {
       const ensured = await ensureWorkspaceForUser(db, session.user.id, examAttemptId);
       if (!ensured.ok) {
-        return NextResponse.json(
-          { error: "Exam attempt not found" },
-          { status: 422 }
-        );
+        return NextResponse.json({ error: "Exam attempt not found" }, { status: 422 });
       }
       return NextResponse.json(ensured.workspace, {
         status: ensured.created ? 201 : 200,
@@ -76,7 +83,12 @@ export async function POST(request: Request) {
 
     const inserted = await db.insert(userWorkspaces).values(newWorkspace).returning();
     return NextResponse.json(inserted[0], { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to create workspace" }, { status: 500 });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.workspaces.failure",
+      error,
+      request,
+      message: "Failed to create workspace",
+    });
   }
 }

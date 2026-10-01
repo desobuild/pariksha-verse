@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { topicProgressRepository } from "@/repositories/progress.repository";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const topicStatusEnum = z.enum([
   "not_started",
@@ -45,23 +46,32 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
 
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
 
-  const progress = await topicProgressRepository.getProgressByWorkspaceId(getDb(), workspaceId);
-  return NextResponse.json({ progress });
+    const progress = await topicProgressRepository.getProgressByWorkspaceId(getDb(), workspaceId);
+    return NextResponse.json({ progress });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.progress.failure",
+      error,
+      request,
+      message: "Failed to load progress",
+    });
+  }
 }
 
 export async function PUT(request: Request) {
@@ -85,7 +95,12 @@ export async function PUT(request: Request) {
 
     const saved = await topicProgressRepository.upsertTopicProgress(getDb(), parsed.data);
     return NextResponse.json(saved);
-  } catch {
-    return NextResponse.json({ error: "Failed to save topic progress" }, { status: 500 });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.progress.failure",
+      error,
+      request,
+      message: "Failed to save topic progress",
+    });
   }
 }

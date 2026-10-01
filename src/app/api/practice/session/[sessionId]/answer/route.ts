@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { questionRepository } from "@/repositories/question.repository";
 import { recordAnswerSchema } from "@/domain/practice-engine";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -53,8 +54,13 @@ export async function PUT(
     });
 
     return NextResponse.json({ success: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to record answer";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    // Never echo internal exception details (Phase 14F).
+    return apiErrorResponse({
+      event: "api.practice.answer.failure",
+      error,
+      request,
+      message: "Failed to record answer",
+    });
   }
 }

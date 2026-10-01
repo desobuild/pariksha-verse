@@ -8,6 +8,7 @@ import { practiceRepository } from "@/repositories/practice.repository";
 import { topicProgressRepository } from "@/repositories/progress.repository";
 import { getTopicMetadata } from "@/domain/dashboard";
 import { applyPracticeSessionToProgress } from "@/domain/practice";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 const createPracticeSessionSchema = z
   .object({
@@ -17,7 +18,13 @@ const createPracticeSessionSchema = z
     questionsAttempted: z.number().int().min(1).optional(),
     correct: z.number().int().min(0).optional(),
     correctAnswers: z.number().int().min(0).optional(),
-    durationMinutes: z.number().int().min(0).max(24 * 60).optional().default(0),
+    durationMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60)
+      .optional()
+      .default(0),
     completedAt: z.coerce.date().optional(),
   })
   .refine(
@@ -44,23 +51,32 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
 }
 
 export async function GET(request: Request) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
 
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
 
-  const sessions = await practiceRepository.getSessionsForWorkspaceId(getDb(), workspaceId);
-  return NextResponse.json({ sessions });
+    const sessions = await practiceRepository.getSessionsForWorkspaceId(getDb(), workspaceId);
+    return NextResponse.json({ sessions });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.practice.failure",
+      error,
+      request,
+      message: "Failed to load practice history",
+    });
+  }
 }
 
 export async function POST(request: Request) {
@@ -133,7 +149,12 @@ export async function POST(request: Request) {
     await topicProgressRepository.upsertTopicProgress(db, progressPatch);
 
     return NextResponse.json(createdSession, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to save practice session" }, { status: 500 });
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.practice.failure",
+      error,
+      request,
+      message: "Failed to save practice session",
+    });
   }
 }

@@ -24,10 +24,26 @@ import { practiceRepository } from "./practice.repository";
 import { topicProgressRepository } from "./progress.repository";
 import { applyPracticeSessionToProgress } from "@/domain/practice";
 import { getTopicMetadata } from "@/domain/dashboard";
+import { getCloudflareEnv } from "@/lib/cloudflare/env";
 
 /**
  * Server-side question bank and practice engine persistence (D1 via Drizzle).
  */
+
+/**
+ * Phase 14D production data boundary. Synthetic fixture questions
+ * (`q_fix_*`, provenance "fixture") are development/test scaffolding and must
+ * NEVER enter production. When the trusted server-side environment is
+ * production, fixture seeding is refused unconditionally: production question
+ * data comes exclusively from the explicit canonical seed (db:seed:prod /
+ * seed-neet.sql) or the idempotent canonical authored-bank self-heal. If
+ * canonical data is missing in production, reads return an empty pool instead
+ * of silently injecting test content.
+ */
+export function isFixtureQuestionSeedingAllowed(): boolean {
+  const environment = String(getCloudflareEnv().ENVIRONMENT || "").toLowerCase();
+  return environment !== "production";
+}
 
 /**
  * Per-database memo so the authored bank is checked once per process/database
@@ -38,8 +54,11 @@ const authoredSeededDatabases = new WeakMap<object, boolean>();
 export const questionRepository = {
   /**
    * Ensures fixture questions are seeded into the database if questions table is empty.
+   * Refused unconditionally in production (see isFixtureQuestionSeedingAllowed).
    */
   async ensureFixtureQuestionsSeeded(db: DatabaseInstance): Promise<void> {
+    if (!isFixtureQuestionSeedingAllowed()) return;
+
     const existing = await db.select({ id: questions.id }).from(questions).limit(1);
     if (existing.length > 0) return;
 

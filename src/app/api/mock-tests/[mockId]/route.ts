@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/db";
 import { userWorkspaces } from "@/db/schema";
 import { mockTestRepository } from "@/repositories/mock-test.repository";
+import { apiErrorResponse } from "@/lib/observability/api-error";
 
 async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   const db = getDb();
@@ -15,32 +16,38 @@ async function resolveOwnedWorkspace(userId: string, workspaceId: string) {
   return rows[0] ?? null;
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ mockId: string }> }
-) {
-  const session = await getSession(request);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: { params: Promise<{ mockId: string }> }) {
+  try {
+    const session = await getSession(request);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const { mockId } = await params;
-  const url = new URL(request.url);
-  const workspaceId = url.searchParams.get("workspaceId");
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  }
+    const { mockId } = await params;
+    const url = new URL(request.url);
+    const workspaceId = url.searchParams.get("workspaceId");
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
 
-  const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
-  if (!owned) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
+    const owned = await resolveOwnedWorkspace(session.user.id, workspaceId);
+    if (!owned) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
 
-  const db = getDb();
-  const test = await mockTestRepository.getMockTestById(db, mockId, workspaceId);
-  if (!test) {
-    return NextResponse.json({ error: "Mock test not found" }, { status: 404 });
-  }
+    const db = getDb();
+    const test = await mockTestRepository.getMockTestById(db, mockId, workspaceId);
+    if (!test) {
+      return NextResponse.json({ error: "Mock test not found" }, { status: 404 });
+    }
 
-  return NextResponse.json(test);
+    return NextResponse.json(test);
+  } catch (error) {
+    return apiErrorResponse({
+      event: "api.mock_tests.detail.failure",
+      error,
+      request,
+      message: "Failed to load mock test",
+    });
+  }
 }

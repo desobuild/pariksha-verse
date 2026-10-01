@@ -6,6 +6,17 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendMagicLinkEmail } from "@/lib/email/email-service";
 import { getCloudflareEnv } from "@/lib/cloudflare/env";
+import { recordVerificationTokenIssued } from "@/lib/auth/verification-tokens";
+import {
+  AUTH_RATE_LIMIT_RULES,
+  enforceRateLimit,
+  getClientIp,
+  isRateLimitingEnabled,
+  rateLimitExceededResponse,
+} from "@/lib/auth/rate-limit";
+import { logger } from "@/lib/observability/logger";
+import { apiErrorResponse } from "@/lib/observability/api-error";
+import { getRequestId } from "@/lib/observability/request-id";
 
 const createAccountSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -13,6 +24,24 @@ const createAccountSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const db = getDb();
+    const requestId = getRequestId(request);
+    logger.info("auth.createaccount.requested", { request_id: requestId });
+
+    // Phase 14E: server-side abuse protection (see sign-in route).
+    if (isRateLimitingEnabled()) {
+      const ipLimit = await enforceRateLimit(
+        db,
+        AUTH_RATE_LIMIT_RULES.createAccountIp,
+        getClientIp(request)
+      );
+      if (!ipLimit.allowed)
+        return rateLimitExceededResponse(ipLimit, {
+          request,
+          rule: AUTH_RATE_LIMIT_RULES.createAccountIp,
+        });
+    }
+
     const body = await request.json();
     const result = createAccountSchema.safeParse(body);
     if (!result.success) {
@@ -23,18 +52,31 @@ export async function POST(request: Request) {
     }
 
     const email = result.data.email.toLowerCase();
-    const db = getDb();
+
+    if (isRateLimitingEnabled()) {
+      const emailLimit = await enforceRateLimit(
+        db,
+        AUTH_RATE_LIMIT_RULES.createAccountEmail,
+        email
+      );
+      if (!emailLimit.allowed)
+        return rateLimitExceededResponse(emailLimit, {
+          request,
+          rule: AUTH_RATE_LIMIT_RULES.createAccountEmail,
+        });
+    }
 
     // Check if user already exists
-    const existing = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     // Determine environment bindings and configuration
     const cfEnv = getCloudflareEnv();
-    const env = (cfEnv.ENVIRONMENT || process.env.ENVIRONMENT || process.env.NODE_ENV || "development").toLowerCase();
+    const env = (
+      cfEnv.ENVIRONMENT ||
+      process.env.ENVIRONMENT ||
+      process.env.NODE_ENV ||
+      "development"
+    ).toLowerCase();
     const isStagingOrProd = env === "production" || env === "staging";
     const allowTestAuthMock =
       !isStagingOrProd &&
@@ -42,19 +84,39 @@ export async function POST(request: Request) {
 
     // Build verification URL
     const url = new URL(request.url);
-    const appUrl = cfEnv.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
+    const appUrl =
+      cfEnv.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      `${url.protocol}//${url.host}`;
+
+    // Phase 14E: every issued token is recorded server-side (digest only) so
+    // verify can consume it exactly once. Records are created before delivery.
+    const issueToken = async (): Promise<string> => {
+      const token = await createMagicLinkToken(email);
+      await recordVerificationTokenIssued(db, { email, token });
+      return token;
+    };
 
     if (existing[0]) {
       // User already exists: send sign in token instead
-      const token = await createMagicLinkToken(email);
+      const token = await issueToken();
       const verificationUrl = `${appUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
       const emailResult = await sendMagicLinkEmail({ email, verificationUrl, token });
       if (!emailResult.success) {
+        logger.error("auth.email_delivery.failed", {
+          request_id: requestId,
+          flow: "create_account_existing",
+        });
         return NextResponse.json(
           { error: "Failed to send verification email. Please try again later." },
           { status: 500 }
         );
       }
+
+      logger.info("auth.createaccount.issued", {
+        request_id: requestId,
+        existing_account: true,
+      });
 
       const responseBody: Record<string, unknown> = {
         success: true,
@@ -76,16 +138,26 @@ export async function POST(request: Request) {
     };
 
     await db.insert(users).values(newUser);
+    logger.info("auth.createaccount.created", { request_id: requestId });
 
-    const token = await createMagicLinkToken(email);
+    const token = await issueToken();
     const verificationUrl = `${appUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
     const emailResult = await sendMagicLinkEmail({ email, verificationUrl, token });
     if (!emailResult.success) {
+      logger.error("auth.email_delivery.failed", {
+        request_id: requestId,
+        flow: "create_account_new",
+      });
       return NextResponse.json(
         { error: "Failed to send verification email. Please try again later." },
         { status: 500 }
       );
     }
+
+    logger.info("auth.createaccount.issued", {
+      request_id: requestId,
+      existing_account: false,
+    });
 
     const responseBody: Record<string, unknown> = {
       success: true,
@@ -96,10 +168,12 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(responseBody, { status: 201 });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to create account." },
-      { status: 500 }
-    );
+  } catch (error) {
+    return apiErrorResponse({
+      event: "auth.createaccount.failure",
+      error,
+      request,
+      message: "Failed to create account.",
+    });
   }
 }

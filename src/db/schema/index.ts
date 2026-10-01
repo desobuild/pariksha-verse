@@ -14,3 +14,4 @@ export * from "./resources";
 export * from "./mock-tests";
 export * from "./preferences";
 export * from "./questions";
+export * from "./auth";

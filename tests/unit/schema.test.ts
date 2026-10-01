@@ -15,6 +15,37 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+/**
+ * Asserts the promise rejects with a driver-level constraint error.
+ *
+ * drizzle-orm >=0.45 wraps failed queries in a DrizzleQueryError whose
+ * `cause` chain carries the original SQLite error, so the constraint text no
+ * longer appears in the top-level message. Walk the whole chain — the
+ * constraint must still be enforced by the database either way.
+ */
+async function expectConstraintRejection(
+  promise: Promise<unknown>,
+  pattern: RegExp
+): Promise<void> {
+  let rejected = false;
+  let thrown: unknown;
+  try {
+    await promise;
+  } catch (err) {
+    rejected = true;
+    thrown = err;
+  }
+  expect(rejected, `Expected promise to reject with ${pattern}`).toBe(true);
+
+  let chainText = "";
+  let current: unknown = thrown;
+  while (current instanceof Error) {
+    chainText += ` ${current.message}`;
+    current = (current as { cause?: unknown }).cause;
+  }
+  expect(chainText).toMatch(pattern);
+}
+
 describe("Database Schema & Relational Integrity", () => {
   let db: DatabaseInstance;
   const now = new Date();
@@ -219,7 +250,7 @@ describe("Database Schema & Relational Integrity", () => {
         updatedAt: now,
       });
 
-      await expect(
+      await expectConstraintRejection(
         db.insert(exams).values({
           id: "exam_2",
           slug: "neet", // duplicate slug
@@ -228,8 +259,9 @@ describe("Database Schema & Relational Integrity", () => {
           category: "medical",
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/);
+        }),
+        /UNIQUE constraint failed/
+      );
     });
 
     it("rejects duplicate subject under same exam", async () => {
@@ -252,7 +284,7 @@ describe("Database Schema & Relational Integrity", () => {
         updatedAt: now,
       });
 
-      await expect(
+      await expectConstraintRejection(
         db.insert(subjects).values({
           id: "sub_2",
           examId: "exam_neet",
@@ -260,8 +292,9 @@ describe("Database Schema & Relational Integrity", () => {
           name: "Physics Duplicate",
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/);
+        }),
+        /UNIQUE constraint failed/
+      );
     });
 
     it("rejects duplicate chapter under same subject", async () => {
@@ -292,7 +325,7 @@ describe("Database Schema & Relational Integrity", () => {
         updatedAt: now,
       });
 
-      await expect(
+      await expectConstraintRejection(
         db.insert(chapters).values({
           id: "chap_2",
           subjectId: "sub_phy",
@@ -300,8 +333,9 @@ describe("Database Schema & Relational Integrity", () => {
           name: "Kinematics Duplicate",
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/);
+        }),
+        /UNIQUE constraint failed/
+      );
     });
 
     it("rejects duplicate topic under same chapter", async () => {
@@ -340,7 +374,7 @@ describe("Database Schema & Relational Integrity", () => {
         updatedAt: now,
       });
 
-      await expect(
+      await expectConstraintRejection(
         db.insert(topics).values({
           id: "top_2",
           chapterId: "chap_kin",
@@ -348,8 +382,9 @@ describe("Database Schema & Relational Integrity", () => {
           name: "Vectors Duplicate",
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/);
+        }),
+        /UNIQUE constraint failed/
+      );
     });
 
     it("rejects duplicate saved resource for same workspace", async () => {
@@ -402,7 +437,7 @@ describe("Database Schema & Relational Integrity", () => {
         updatedAt: now,
       });
 
-      await expect(
+      await expectConstraintRejection(
         db.insert(savedResources).values({
           id: "sr_2",
           workspaceId: "ws_1",
@@ -410,12 +445,13 @@ describe("Database Schema & Relational Integrity", () => {
           savedAt: now,
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/);
+        }),
+        /UNIQUE constraint failed/
+      );
     });
 
     it("rejects foreign key violation when referencing nonexistent parent", async () => {
-      await expect(
+      await expectConstraintRejection(
         db.insert(subjects).values({
           id: "sub_orphan",
           examId: "nonexistent_exam",
@@ -423,8 +459,9 @@ describe("Database Schema & Relational Integrity", () => {
           name: "Orphan",
           createdAt: now,
           updatedAt: now,
-        })
-      ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+        }),
+        /FOREIGN KEY constraint failed/
+      );
     });
 
     it("cascades deletion properly from workspace to topic progress", async () => {

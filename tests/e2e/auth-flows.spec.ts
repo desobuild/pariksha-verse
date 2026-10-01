@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, request as apiRequest } from "@playwright/test";
 import {
   createAccountWithEmail,
   demoSignIn,
@@ -164,5 +164,168 @@ test.describe("Phase 3 Authentication & Guest Mode E2E Flows (Phase 5 semantics)
         });
       });
     }).toBeNull();
+  });
+});
+
+test.describe("Phase 14B — Magic-link verification page (/auth/verify)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  const linkEmail = `linkflow_${Date.now()}@parikshaverse.in`;
+
+  test("opening the emailed verification URL signs the user in", async ({ page }) => {
+    skipOnStaging(
+      "Local magic-link flow — staging has no email delivery by design; staging auth coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
+
+    // Create the account and capture the out-of-band token from the sanctioned
+    // local test field (ENABLE_TEST_AUTH_MOCK=true on the local dev server).
+    await page.goto("/auth/create-account");
+    const responsePromise = page.waitForResponse(
+      (res) => res.url().includes("/api/auth/create-account") && res.request().method() === "POST"
+    );
+    await page.getByLabel(/email address/i).fill(linkEmail);
+    await page.getByRole("button", { name: /create account with email/i }).click();
+    const body = (await (await responsePromise).json()) as { _testToken?: string };
+    const token = body._testToken;
+    expect(token, "local dev server must run with ENABLE_TEST_AUTH_MOCK=true").toBeTruthy();
+
+    // Open the verification URL exactly as the transactional email link does,
+    // instead of pasting the token into the sign-in form.
+    await page.goto(
+      `/auth/verify?token=${encodeURIComponent(token!)}&email=${encodeURIComponent(linkEmail)}`
+    );
+
+    // Success establishes the pv_session and navigates into the app (fresh
+    // accounts without a workspace are routed into onboarding).
+    await expect(page).toHaveURL(/\/app\/home|\/exam\/select/, { timeout: 20_000 });
+
+    // Session actually established. Assert on the More screen: the compact
+    // mobile header does not render the account email on /exam/select.
+    await page.goto("/app/more");
+    const main = page.locator("main");
+    await expect(main.getByText(linkEmail)).toBeVisible({ timeout: 15_000 });
+    await expect(main.getByRole("button", { name: /sign out/i })).toBeVisible();
+  });
+
+  test("a verification link without a token shows the broken-link state", async ({ page }) => {
+    skipOnStaging(
+      "Local magic-link flow — staging has no email delivery by design; staging auth coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
+
+    await page.goto("/auth/verify");
+    await expect(page.getByText(/this sign-in link is incomplete/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /return to sign in/i })).toHaveAttribute(
+      "href",
+      "/auth/sign-in"
+    );
+  });
+
+  test("an invalid token shows the failure state and keeps the visitor unauthenticated", async ({
+    page,
+  }) => {
+    skipOnStaging(
+      "Local magic-link flow — staging has no email delivery by design; staging auth coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
+
+    await page.goto(
+      `/auth/verify?token=${encodeURIComponent("bogus_token.bad_signature")}&email=${encodeURIComponent("nobody@example.com")}`
+    );
+
+    await expect(
+      page.getByRole("heading", { name: /verification failed/i })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/invalid or has expired/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /return to sign in/i })).toBeVisible();
+
+    // No session was established by the failed attempt.
+    await page.goto("/app/home");
+    await expect(page).toHaveURL(/\/exam\/select/);
+  });
+});
+
+test.describe("Phase 14E — one-time tokens & server-side session revocation (local)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  const replayEmail = `replay_${Date.now()}@parikshaverse.in`;
+  const revocationEmail = `revoke_${Date.now()}@parikshaverse.in`;
+
+  /** Signs out through the More screen and confirms guest state. */
+  async function signOutViaUi(page: import("@playwright/test").Page): Promise<void> {
+    await page.goto("/app/more");
+    const signOutBtn = page.locator("main").getByRole("button", { name: /sign out/i });
+    await expect(signOutBtn).toBeVisible();
+    await signOutBtn.click();
+    await expect(page.getByText(/guest mode/i).first()).toBeVisible({ timeout: 15_000 });
+  }
+
+  test("a verification link can be used exactly once — replay is rejected", async ({ page }) => {
+    skipOnStaging(
+      "Local magic-link flow — staging has no email delivery by design; staging auth coverage: tests/e2e/staging/demo-auth.spec.ts"
+    );
+
+    // Capture the out-of-band token from the sanctioned local test field.
+    await page.goto("/auth/create-account");
+    const responsePromise = page.waitForResponse(
+      (res) => res.url().includes("/api/auth/create-account") && res.request().method() === "POST"
+    );
+    await page.getByLabel(/email address/i).fill(replayEmail);
+    await page.getByRole("button", { name: /create account with email/i }).click();
+    const body = (await (await responsePromise).json()) as { _testToken?: string };
+    const token = body._testToken;
+    expect(token, "local dev server must run with ENABLE_TEST_AUTH_MOCK=true").toBeTruthy();
+    const verifyUrl = `/auth/verify?token=${encodeURIComponent(token!)}&email=${encodeURIComponent(replayEmail)}`;
+
+    // First use signs the user in.
+    await page.goto(verifyUrl);
+    await expect(page).toHaveURL(/\/app\/home|\/exam\/select/, { timeout: 20_000 });
+    await signOutViaUi(page);
+
+    // Replay of the SAME link is rejected with the generic failure state and
+    // establishes no session.
+    await page.goto(verifyUrl);
+    await expect(
+      page.getByRole("heading", { name: /verification failed/i })
+    ).toBeVisible({ timeout: 15_000 });
+    await page.goto("/app/home");
+    await expect(page).toHaveURL(/\/exam\/select/);
+  });
+
+  test("sign-out invalidates the session server-side — a stolen cookie dies", async ({ page }) => {
+    skipOnStaging(
+      "Local magic-link flow — staging has no email delivery by design; staging equivalent lives in the staging demo-auth spec"
+    );
+
+    // Authenticate through the real UI.
+    await createAccountWithEmail(page, revocationEmail);
+
+    // Capture the session cookie — the "stolen" credential.
+    const sessionCookie = (await page.context().cookies()).find(
+      (c) => c.name === "pv_session"
+    );
+    expect(sessionCookie, "pv_session cookie must exist after sign-in").toBeTruthy();
+
+    // A standalone API context (its own cookie jar) replays exactly that
+    // stolen cookie: the session endpoint must accept it while it is live.
+    const origin = new URL(page.url()).origin;
+    const stolen = await apiRequest.newContext({
+      baseURL: origin,
+      extraHTTPHeaders: { cookie: `pv_session=${sessionCookie!.value}` },
+    });
+    const before = await stolen.get("/api/auth/session");
+    expect(before.status()).toBe(200);
+    const beforeBody = (await before.json()) as { user: { email: string } | null };
+    expect(beforeBody.user?.email).toBe(revocationEmail);
+
+    // Sign out through the UI.
+    await signOutViaUi(page);
+
+    // The SAME stolen cookie no longer authenticates: revocation was
+    // server-side, not just a cookie clear.
+    const after = await stolen.get("/api/auth/session");
+    expect(after.status()).toBe(200);
+    const afterBody = (await after.json()) as { user: unknown };
+    expect(afterBody.user).toBeNull();
+
+    await stolen.dispose();
   });
 });

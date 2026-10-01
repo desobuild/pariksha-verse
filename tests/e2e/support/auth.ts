@@ -52,8 +52,8 @@ export async function gotoSignInPanel(page: Page): Promise<void> {
       "The sign-in page rendered the email form instead of the Friend 1-5 panel.",
       "Server reports demoAuth.enabled=false (see GET /api/auth/session);",
       "/api/auth/demo fails closed. Check that the deployed worker resolves",
-      "ENVIRONMENT=staging through getCloudflareEnv() — /api/health currently",
-      "reports environment=development and d1Configured=false.",
+      "ENVIRONMENT=staging through getCloudflareEnv() — GET /api/health must",
+      "report environment=staging and GET /api/health/ready must return ok.",
     ].join(" ")
   ).toBeVisible();
 }

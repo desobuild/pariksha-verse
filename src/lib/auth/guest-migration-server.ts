@@ -339,46 +339,71 @@ export async function executeServerMigration(
   }
 
   // 8. Migrate Mock Tests & Results
+  //
+  // Phase 14E (PART F): mock tests are looked up by client-supplied IDs, so
+  // every reuse/insert decision below is scoped to workspaces the
+  // authenticated user owns (workspaceIdMap only ever holds server-resolved,
+  // owned workspace IDs). A client-supplied mockTestId that collides with
+  // another user's mock test is never reused and never written to — the guest
+  // record is re-homed under a fresh server-generated row in the caller's own
+  // workspace instead.
+  const ownedWorkspaceIds = new Set(workspaceIdMap.values());
+
   const guestMocks = payload.mockTests || [];
   const mockIdMap = new Map<string, string>();
   for (const gm of guestMocks) {
     const targetWsId = resolveWorkspaceId(gm.workspaceId);
     if (!targetWsId || !gm.title) continue;
 
-    const mockId = gm.id || `mock_${crypto.randomUUID()}`;
-    const existing = await db
+    const requestedId = gm.id || `mock_${crypto.randomUUID()}`;
+    const existingRows = await db
       .select()
       .from(mockTests)
-      .where(eq(mockTests.id, mockId))
+      .where(eq(mockTests.id, requestedId))
       .limit(1);
+    const existing = existingRows[0];
+    const existingOwned =
+      existing && ownedWorkspaceIds.has(existing.workspaceId) ? existing : null;
 
-    if (existing[0]) {
-      if (gm.id) mockIdMap.set(gm.id, existing[0].id);
-    } else {
-      if (gm.id) mockIdMap.set(gm.id, mockId);
-
-      await db.insert(mockTests).values({
-        id: mockId,
-        workspaceId: targetWsId,
-        title: gm.title,
-        type: gm.type || "full_syllabus",
-        scheduledAt: gm.scheduledAt ? new Date(gm.scheduledAt) : null,
-        durationMinutes: gm.durationMinutes ?? 180,
-        source: gm.source ?? null,
-        externalUrl: gm.externalUrl ?? null,
-        createdAt: gm.createdAt ? new Date(gm.createdAt) : new Date(),
-        updatedAt: new Date(),
-      });
-      summary.mockTestsMigrated++;
+    if (existingOwned) {
+      // Idempotent retry: the row is from this user's own workspace.
+      if (gm.id) mockIdMap.set(gm.id, existingOwned.id);
+      continue;
     }
+
+    // Foreign PK collision (or fresh insert): never reuse or touch the
+    // foreign row — insert under a server-generated ID instead.
+    const insertedId =
+      existing ? `mock_${crypto.randomUUID()}` : requestedId;
+
+    if (gm.id) mockIdMap.set(gm.id, insertedId);
+
+    await db.insert(mockTests).values({
+      id: insertedId,
+      workspaceId: targetWsId,
+      title: gm.title,
+      type: gm.type || "full_syllabus",
+      scheduledAt: gm.scheduledAt ? new Date(gm.scheduledAt) : null,
+      durationMinutes: gm.durationMinutes ?? 180,
+      source: gm.source ?? null,
+      externalUrl: gm.externalUrl ?? null,
+      createdAt: gm.createdAt ? new Date(gm.createdAt) : new Date(),
+      updatedAt: new Date(),
+    });
+    summary.mockTestsMigrated++;
   }
 
   // Migrate Mock Test Results
   const guestResults = payload.mockTestResults || [];
   for (const gr of guestResults) {
     if (!gr.mockTestId) continue;
-    const targetMockId = mockIdMap.get(gr.mockTestId) || gr.mockTestId;
-    const resId = gr.id || `res_${crypto.randomUUID()}`;
+    // Phase 14E (PART F): results may only attach to mock tests that were
+    // resolved through THIS payload's owned mapping. The previous fallback to
+    // the raw client-supplied mockTestId was a cross-tenant write path: any
+    // authenticated user could attach a result to another user's mock test.
+    // Orphaned references (no matching mock in the payload) are skipped.
+    const targetMockId = mockIdMap.get(gr.mockTestId);
+    if (!targetMockId) continue;
 
     const existing = await db
       .select()
@@ -387,6 +412,9 @@ export async function executeServerMigration(
       .limit(1);
 
     if (!existing[0]) {
+      // Server-generated ID: dedup is by mockTestId, and honoring a
+      // client-supplied PK could collide with (or impersonate) a foreign row.
+      const resId = `res_${crypto.randomUUID()}`;
       await db.insert(mockTestResults).values({
         id: resId,
         mockTestId: targetMockId,
